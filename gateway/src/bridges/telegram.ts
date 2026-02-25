@@ -102,6 +102,7 @@ export class TelegramBridge {
         `✍️ Hey ${userName}! I'm AuthorClaw.\n\n` +
         `Tell me what to do and I'll figure out the steps.\n\n` +
         `*Commands:*\n` +
+        `/conductor — Launch the book conductor pipeline\n` +
         `/goal [task] — Tell me what to do (I'll plan the steps)\n` +
         `/write [idea] — Plan & write a book (autonomous)\n` +
         `/goals — See all goals\n` +
@@ -109,8 +110,35 @@ export class TelegramBridge {
         `/research [topic] — Research from whitelisted sites\n` +
         `/files [folder] — List project files\n` +
         `/read [filename] — Read a file snippet\n` +
-        `/stop — Pause active goal\n\n` +
+        `/stop — Pause active goal / stop conductor\n\n` +
         `Or just chat with me.`);
+      return;
+    }
+
+    // ── /conductor — Launch the book conductor pipeline ──
+    if (text.startsWith('/conductor')) {
+      try {
+        // Check if already running
+        const runningRes = await fetch('http://localhost:3847/api/conductor/running');
+        const runningData = await runningRes.json() as any;
+        if (runningData.running) {
+          await this.sendMessage(chatId, `🎼 Conductor is already running (PID: ${runningData.pid}).\nUse /stop to shut it down, or check the dashboard Live Progress tab.`);
+          return;
+        }
+
+        await this.sendMessage(chatId, `🎼 Launching the book conductor...\nIt will write your configured project through all phases: premise → book bible → outline → writing → revision → assembly.`);
+
+        const launchRes = await fetch('http://localhost:3847/api/conductor/launch', { method: 'POST' });
+        const launchData = await launchRes.json() as any;
+
+        if (launchData.success) {
+          await this.sendMessage(chatId, `✅ Conductor launched (PID: ${launchData.pid})!\n\n📊 Watch progress: http://localhost:3847 → Live Progress tab\nUse /stop to halt it gracefully.`);
+        } else {
+          await this.sendMessage(chatId, `❌ ${launchData.error || 'Failed to launch conductor'}`);
+        }
+      } catch (e) {
+        await this.sendMessage(chatId, `❌ Could not reach AuthorClaw: ${String(e)}`);
+      }
       return;
     }
 
@@ -274,17 +302,34 @@ export class TelegramBridge {
       return;
     }
 
-    // ── /stop — Pause active goal ──
+    // ── /stop — Pause active goal or stop conductor ──
     if (text.startsWith('/stop') || text.startsWith('/pause')) {
+      let stoppedSomething = false;
+
+      // Try to stop the conductor if running
+      try {
+        const runningRes = await fetch('http://localhost:3847/api/conductor/running');
+        const runningData = await runningRes.json() as any;
+        if (runningData.running) {
+          await fetch('http://localhost:3847/api/conductor/stop', { method: 'POST' });
+          await this.sendMessage(chatId, `🛑 Stop signal sent to conductor. It will finish the current step and shut down.`);
+          stoppedSomething = true;
+        }
+      } catch { /* silent */ }
+
+      // Also try to pause active goals
       if (this.commandHandlers) {
         const goals = this.commandHandlers.listGoals();
         const active = goals.find(g => g.status === 'active');
-        if (!active) {
-          await this.sendMessage(chatId, `Nothing running right now.`);
-        } else {
+        if (active) {
           await this.sendMessage(chatId, `⏸ Pausing "${active.title}"... (Goal will finish current step then stop)`);
           this.pauseRequested = true;
+          stoppedSomething = true;
         }
+      }
+
+      if (!stoppedSomething) {
+        await this.sendMessage(chatId, `Nothing running right now.`);
       }
       return;
     }

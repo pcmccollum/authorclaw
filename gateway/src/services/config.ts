@@ -2,13 +2,14 @@
  * AuthorClaw Configuration Service
  */
 
-import { readFile } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
 export class ConfigService {
   private configDir: string;
   private config: Record<string, any> = {};
+  private userOverrides: Record<string, any> = {};
 
   constructor(configDir: string) {
     this.configDir = configDir;
@@ -25,8 +26,8 @@ export class ConfigService {
     const userPath = join(this.configDir, 'user.json');
     if (existsSync(userPath)) {
       const raw = await readFile(userPath, 'utf-8');
-      const userConfig = JSON.parse(raw);
-      this.config = this.deepMerge(this.config, userConfig);
+      this.userOverrides = JSON.parse(raw);
+      this.config = this.deepMerge(this.config, this.userOverrides);
     }
 
     // Environment variable overrides
@@ -52,6 +53,24 @@ export class ConfigService {
       current = current[parts[i]];
     }
     current[parts[parts.length - 1]] = value;
+  }
+
+  /** Set a value and persist it to config/user.json so it survives restarts. */
+  async setAndPersist(path: string, value: any): Promise<void> {
+    this.set(path, value);
+
+    // Also update userOverrides
+    const parts = path.split('.');
+    let current = this.userOverrides;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!current[parts[i]] || typeof current[parts[i]] !== 'object') current[parts[i]] = {};
+      current = current[parts[i]];
+    }
+    current[parts[parts.length - 1]] = value;
+
+    // Write to disk
+    const userPath = join(this.configDir, 'user.json');
+    await writeFile(userPath, JSON.stringify(this.userOverrides, null, 2), 'utf-8');
   }
 
   private deepMerge(target: any, source: any): any {

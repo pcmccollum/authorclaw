@@ -264,6 +264,7 @@
       <div class="chat-input-row">
         <textarea id="chatInput" placeholder="Type a message... (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
         <button id="btnChatSend">Send</button>
+        <button class="secondary" id="btnChatClear" title="Clear chat history" style="padding:8px 12px;">&#128465;</button>
       </div>
     </div>
   </div>
@@ -478,6 +479,14 @@
     <span id="memoryResetStatus" style="display:block;margin-top:8px;font-size:13px;color:#7f8c8d;"></span>
   </div>
 
+  <!-- Reset Settings -->
+  <div class="card">
+    <h3>&#128260; Reset Settings</h3>
+    <p class="hint" style="margin-bottom:10px;">Reset budget, heartbeat, and autonomous settings back to defaults. API keys and Telegram config are not affected.</p>
+    <button class="danger" id="btnResetSettings">Reset Settings to Defaults</button>
+    <span id="resetSettingsStatus" style="display:block;margin-top:8px;font-size:13px;color:#7f8c8d;"></span>
+  </div>
+
   <!-- Test Connection -->
   <div class="card">
     <h3>&#128172; Test Connection</h3>
@@ -581,6 +590,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="success" id="btnSaveProject">Save Project Config</button>
       <button class="secondary" id="btnLoadProject">Load From Server</button>
+      <button class="danger" id="btnClearProject">Clear Form</button>
     </div>
     <div id="projectStatus" class="hint" style="margin-top:8px;"></div>
   </div>
@@ -677,8 +687,11 @@
   </div>
 
   <div class="stop-section">
-    <button class="danger" id="btnStopConductor">Stop Conductor</button>
-    <p id="stopConductorHint">Sends a stop signal to the conductor. It will finish the current step and shut down gracefully.</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+      <button class="success" id="btnStartConductor">&#9654;&#65039; Start Conductor</button>
+      <button class="danger" id="btnStopConductor">&#9632; Stop Conductor</button>
+    </div>
+    <p id="conductorHint" style="color:#7f8c8d;font-size:13px;margin-top:8px;">Start the book conductor to write your configured project autonomously. Make sure Project Config is saved first.</p>
   </div>
 
 </div>
@@ -1541,12 +1554,47 @@ function pollProgress() {
   });
 }
 
+// Start Conductor (launch from dashboard)
+document.getElementById('btnStartConductor').addEventListener('click', function() {
+  api('GET', '/api/conductor/running').then(function(data) {
+    if (data.running) {
+      showToast('Conductor is already running (PID: ' + data.pid + ')', 'info');
+      return;
+    }
+    if (!confirm('Start the book conductor? Make sure your Project Config is saved. This will begin writing your novel autonomously.')) return;
+    var btn = document.getElementById('btnStartConductor');
+    btn.disabled = true;
+    btn.textContent = 'Launching...';
+    api('POST', '/api/conductor/launch').then(function(data) {
+      btn.disabled = false;
+      btn.innerHTML = '&#9654;&#65039; Start Conductor';
+      showToast('Conductor launched! Watch progress below.', 'success');
+      document.getElementById('conductorHint').textContent = 'Conductor is running (PID: ' + (data.pid || 'unknown') + '). Watch progress above.';
+      document.getElementById('conductorHint').style.color = '#27ae60';
+    }).catch(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = '&#9654;&#65039; Start Conductor';
+      showToast('Failed to launch: ' + e.message, 'error');
+    });
+  }).catch(function() {
+    // Can't check — just try to launch
+    api('POST', '/api/conductor/launch').then(function() {
+      showToast('Conductor launched!', 'success');
+    }).catch(function(e) {
+      showToast('Failed: ' + e.message, 'error');
+    });
+  });
+});
+
+// Stop Conductor
 document.getElementById('btnStopConductor').addEventListener('click', function() {
   if (!confirm('Stop the conductor? It will finish the current step and shut down.')) return;
   api('POST', '/api/conductor/stop').then(function(data) {
     showToast('Stop signal sent! Conductor will shut down after current step.', 'success');
+    document.getElementById('conductorHint').textContent = 'Stop signal sent. Conductor will finish current step and exit.';
+    document.getElementById('conductorHint').style.color = '#f39c12';
   }).catch(function(e) {
-    showToast('Could not send stop signal: ' + e.message + '. Try Ctrl+C in the terminal.', 'error');
+    showToast('Could not send stop signal: ' + e.message, 'error');
   });
 });
 
@@ -1706,6 +1754,46 @@ function sendChatMessage() {
   addChatMessage(text, 'user');
   input.value = '';
   input.style.height = 'auto';
+
+  // Handle /conductor command locally
+  if (text.toLowerCase().startsWith('/conductor')) {
+    chatWaiting = true;
+    addChatMessage('Checking conductor status...', 'bot');
+    api('GET', '/api/conductor/running').then(function(data) {
+      chatWaiting = false;
+      if (data.running) {
+        addChatMessage('The conductor is already running (PID: ' + data.pid + '). Check the Live Progress tab to monitor it, or use /stop to stop it.', 'bot');
+        return;
+      }
+      addChatMessage('Launching the book conductor now... Switch to the Live Progress tab to watch it work!', 'bot');
+      api('POST', '/api/conductor/launch').then(function(result) {
+        addChatMessage('Conductor launched successfully (PID: ' + (result.pid || 'unknown') + '). It will write your book autonomously through all phases: premise, book bible, outline, writing, revision, and assembly.', 'bot');
+        switchTab('progress');
+      }).catch(function(e) {
+        addChatMessage('Failed to launch conductor: ' + e.message, 'bot');
+      });
+    }).catch(function() {
+      chatWaiting = false;
+      api('POST', '/api/conductor/launch').then(function() {
+        addChatMessage('Conductor launched! Switch to the Live Progress tab to watch.', 'bot');
+        switchTab('progress');
+      }).catch(function(e) {
+        addChatMessage('Failed: ' + e.message, 'bot');
+      });
+    });
+    return;
+  }
+
+  // Handle /stop command locally
+  if (text.toLowerCase() === '/stop') {
+    api('POST', '/api/conductor/stop').then(function() {
+      addChatMessage('Stop signal sent to the conductor. It will finish the current step and shut down gracefully.', 'bot');
+    }).catch(function(e) {
+      addChatMessage('Could not send stop signal: ' + e.message, 'bot');
+    });
+    return;
+  }
+
   chatWaiting = true;
   showTypingIndicator();
 
@@ -1795,6 +1883,59 @@ function loadHomeActivity() {
     });
   }).catch(function() {});
 }
+
+// ══════════════════════════════════════════════════════════════
+// CLEAR / RESET BUTTONS
+// ══════════════════════════════════════════════════════════════
+
+// Clear Chat
+document.getElementById('btnChatClear').addEventListener('click', function() {
+  var el = document.getElementById('chatMessages');
+  el.innerHTML = '<div class="chat-msg bot">Hello! I\'m AuthorClaw, your AI writing partner. How can I help you today?</div>';
+  chatHistory = [];
+  chatWaiting = false;
+  removeTypingIndicator();
+  showToast('Chat cleared', 'info');
+});
+
+// Clear Project Config Form
+document.getElementById('btnClearProject').addEventListener('click', function() {
+  if (!confirm('Clear all project config fields? This does not delete the saved config on the server.')) return;
+  projectFields.forEach(function(f) {
+    var el = document.getElementById(f.id);
+    if (el.tagName === 'SELECT') { el.selectedIndex = 0; }
+    else if (f.type === 'int') { el.value = f.key === 'targetChapters' ? '25' : (f.key === 'targetWordsPerChapter' ? '3500' : ''); }
+    else { el.value = ''; }
+  });
+  document.getElementById('projectStatus').textContent = 'Form cleared';
+  document.getElementById('projectStatus').style.color = '#7f8c8d';
+  showToast('Project config form cleared', 'info');
+});
+
+// Reset Settings to Defaults
+document.getElementById('btnResetSettings').addEventListener('click', function() {
+  if (!confirm('Reset budget, heartbeat, and autonomous settings to defaults? API keys are not affected.')) return;
+  var promises = [
+    api('POST', '/api/config/update', { path: 'costs.dailyLimit', value: 5 }),
+    api('POST', '/api/config/update', { path: 'costs.monthlyLimit', value: 50 }),
+    api('POST', '/api/config/update', { path: 'heartbeat.intervalMinutes', value: 15 }),
+    api('POST', '/api/config/update', { path: 'heartbeat.dailyWordGoal', value: 1000 }),
+    api('POST', '/api/config/update', { path: 'heartbeat.enableReminders', value: true }),
+  ];
+  Promise.all(promises).then(function() {
+    document.getElementById('budgetDaily').value = 5;
+    document.getElementById('budgetMonthly').value = 50;
+    document.getElementById('heartbeatInterval').value = 15;
+    document.getElementById('heartbeatWordGoal').value = 1000;
+    document.getElementById('heartbeatReminders').checked = true;
+    var s = document.getElementById('resetSettingsStatus');
+    s.textContent = 'Settings reset to defaults'; s.style.color = '#27ae60';
+    showToast('Settings reset to defaults!', 'success');
+    setTimeout(function() { s.textContent = ''; }, 5000);
+  }).catch(function(e) {
+    showToast('Failed: ' + e.message, 'error');
+  });
+});
 
 // ══════════════════════════════════════════════════════════════
 // UTILITIES & INIT

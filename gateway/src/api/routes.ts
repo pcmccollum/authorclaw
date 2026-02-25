@@ -8,6 +8,7 @@
 // For remote access, implement Bearer token auth using the vault.
 
 import { Application, Request, Response } from 'express';
+import { ChildProcess, spawn } from 'child_process';
 
 export function createAPIRoutes(app: Application, gateway: any, rootDir?: string): void {
   const services = gateway.getServices();
@@ -16,6 +17,7 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
   // In-memory conductor state (updated by conductor script, read by dashboard)
   let conductorState: any = { phase: 'idle', step: '', progress: {} };
   let conductorStopRequested = false;
+  let conductorProcess: ChildProcess | null = null;
 
   // ── Health Check ──
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -346,7 +348,7 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
     });
   });
 
-  app.post('/api/telegram/users', (req: Request, res: Response) => {
+  app.post('/api/telegram/users', async (req: Request, res: Response) => {
     const { users } = req.body;
     if (!Array.isArray(users)) {
       return res.status(400).json({ error: 'users must be an array of user ID strings' });
@@ -355,7 +357,7 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
     if (!valid) {
       return res.status(400).json({ error: 'Each user ID must be a numeric string' });
     }
-    services.config.set('bridges.telegram.allowedUsers', users);
+    await services.config.setAndPersist('bridges.telegram.allowedUsers', users);
     gateway.updateTelegramUsers?.(users);
     res.json({ success: true, users });
   });
@@ -366,14 +368,16 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
       if (result?.error) {
         return res.status(400).json({ error: result.error });
       }
+      await services.config.setAndPersist('bridges.telegram.enabled', true);
       res.json({ success: true, message: 'Telegram bridge connected' });
     } catch (error) {
       res.status(500).json({ error: 'Failed to connect Telegram: ' + String(error) });
     }
   });
 
-  app.post('/api/telegram/disconnect', (_req: Request, res: Response) => {
+  app.post('/api/telegram/disconnect', async (_req: Request, res: Response) => {
     gateway.disconnectTelegram?.();
+    await services.config.setAndPersist('bridges.telegram.enabled', false);
     res.json({ success: true, message: 'Telegram bridge disconnected' });
   });
 
@@ -829,6 +833,70 @@ ${sourceCode.substring(0, 15000)}
     conductorStopRequested = false;
     conductorState = { phase: 'starting', step: 'Initializing...', progress: {} };
     res.json({ success: true });
+  });
+
+  // Launch conductor as a child process
+  app.post('/api/conductor/launch', async (_req: Request, res: Response) => {
+    if (conductorProcess && conductorProcess.exitCode === null) {
+      return res.status(409).json({ error: 'Conductor is already running' });
+    }
+
+    const { join: j } = await import('path');
+    const { existsSync: ex } = await import('fs');
+    const scriptPath = j(baseDir, 'scripts', 'book-conductor.ts');
+
+    if (!ex(scriptPath)) {
+      return res.status(404).json({ error: 'Conductor script not found at ' + scriptPath });
+    }
+
+    // Reset state
+    conductorStopRequested = false;
+    conductorState = { phase: 'starting', step: 'Launching conductor process...', progress: {} };
+
+    try {
+      conductorProcess = spawn('npx', ['tsx', scriptPath], {
+        cwd: baseDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
+        env: { ...process.env },
+      });
+
+      conductorProcess.stdout?.on('data', (data: Buffer) => {
+        const line = data.toString().trim();
+        if (line) console.log('[conductor]', line);
+      });
+
+      conductorProcess.stderr?.on('data', (data: Buffer) => {
+        const line = data.toString().trim();
+        if (line) console.error('[conductor:err]', line);
+      });
+
+      conductorProcess.on('exit', (code) => {
+        console.log(`[conductor] Process exited with code ${code}`);
+        conductorProcess = null;
+        if (conductorState.phase !== 'Complete!') {
+          conductorState = { phase: code === 0 ? 'Complete!' : 'Stopped', step: `Exit code: ${code}`, progress: conductorState.progress || {} };
+        }
+      });
+
+      conductorProcess.on('error', (err) => {
+        console.error('[conductor] Process error:', err);
+        conductorProcess = null;
+        conductorState = { phase: 'Error', step: String(err), progress: {} };
+      });
+
+      await services.audit.log('conductor', 'launched', {});
+      res.json({ success: true, message: 'Conductor launched', pid: conductorProcess.pid });
+    } catch (error) {
+      conductorProcess = null;
+      res.status(500).json({ error: 'Failed to launch conductor: ' + String(error) });
+    }
+  });
+
+  // Check if conductor process is running
+  app.get('/api/conductor/running', (_req: Request, res: Response) => {
+    const running = conductorProcess !== null && conductorProcess.exitCode === null;
+    res.json({ running, pid: conductorProcess?.pid || null });
   });
 
   // Save project config for conductor
