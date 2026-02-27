@@ -65,16 +65,20 @@ git clone https://github.com/Ckokoski/authorclaw.git
 cd authorclaw
 npm install
 
-# 2. Start AuthorClaw
+# 2. Start AuthorClaw (auto-generates vault key on first run)
 npx tsx gateway/src/index.ts
 
 # 3. Open dashboard: http://localhost:3847
+#    Home tab → follow the welcome banner
 #    Settings tab → paste your Gemini API key → Save
 #    (Free tier — the whole book costs $0)
 
-# 4. Agent tab → "Write me a tech-thriller about rogue AI" → Go
+# 4. Home tab chat → "Write me a thriller about rogue AI" → Send
 #    OR send /goal to your Telegram bot
 ```
+
+> **First run?** AuthorClaw auto-generates a vault encryption key and saves it to `.env`.
+> Your API keys will persist across restarts. For a guided setup, run `bash scripts/setup-wizard.sh`.
 
 See [QUICKSTART.md](QUICKSTART.md) for the full setup guide.
 
@@ -170,9 +174,11 @@ AuthorClaw: 🎉 All 15 steps complete!
 
 Open `http://localhost:3847` to access the web dashboard:
 
-- **Settings** — API keys, AI providers, Ollama config, budgets, Telegram
-- **Agent** — Give tasks, monitor goals, view skills
-- **Activity Log** — Real-time feed of everything the agent does
+- **Home** — Morning briefing, chat with AuthorClaw, recent activity feed
+- **Goals** — Create, track, and auto-execute writing goals
+- **Live Progress** — Real-time conductor/goal progress and activity log
+- **Settings** — API keys, AI providers, Ollama, budgets, Telegram, heartbeat
+- **Project Config** — Book title, genre, POV, premise, and project settings
 
 ---
 
@@ -266,7 +272,7 @@ AuthorClaw security features:
 - **Audit**: Daily JSONL logs with categories (message, security, error, connection)
 - **Injection Detection**: Pattern matching for prompt injection attempts
 - **Rate Limiting**: Per-channel rate limits
-- **Research Gate**: 38 whitelisted domains for internet access
+- **Research Gate**: 50+ whitelisted domains for internet access
 - **Localhost Only**: Server binds to 127.0.0.1 (no external access)
 
 ---

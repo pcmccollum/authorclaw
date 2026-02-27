@@ -1,14 +1,15 @@
 {
   "name": "authorclaw",
-  "version": "1.0.0",
-  "description": "The Secure AI Writing Agent — An OpenClaw fork built for authors. MoatBot-grade security, soul-driven style matching, 16+ author skills.",
+  "version": "2.0.0",
+  "description": "The Autonomous AI Writing Agent — An OpenClaw fork built for authors. 37+ skills, autonomous mode, Telegram control, encrypted vault, soul-driven style.",
   "main": "gateway/src/index.ts",
   "type": "module",
   "scripts": {
     "start": "node --import tsx gateway/src/index.ts",
     "dev": "node --watch --import tsx gateway/src/index.ts",
     "build": "tsc",
-    "setup": "bash scripts/setup.sh",
+    "setup": "bash scripts/setup-wizard.sh",
+    "setup:legacy": "bash scripts/setup.sh",
     "recover": "bash scripts/recover.sh",
     "docker:up": "docker-compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker-compose -f docker/docker-compose.yml down",
@@ -38,6 +39,7 @@
   "license": "MIT",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "helmet": "^8.0.0",
     "socket.io": "^4.7.0",

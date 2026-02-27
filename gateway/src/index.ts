@@ -6,6 +6,9 @@
  * Purpose: Fiction & nonfiction writing assistant
  */
 
+// Load .env file FIRST — before anything reads process.env
+import 'dotenv/config';
+
 import express from 'express';
 import { createServer } from 'http';
 import { Server as SocketIO } from 'socket.io';

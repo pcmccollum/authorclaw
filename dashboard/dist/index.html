@@ -230,6 +230,22 @@
 <!-- HOME TAB -->
 <div class="panel active" id="panel-home">
 
+  <!-- First-run welcome banner (hidden after API key is added) -->
+  <div class="card" id="welcomeBanner" style="display:none; background:linear-gradient(135deg,#0f3460,#16213e); border:2px solid #e67e22; text-align:center; padding:24px;">
+    <h3 style="color:#e67e22; margin-top:0;">&#128075; Welcome to AuthorClaw!</h3>
+    <p style="color:#bdc3c7; line-height:1.7; margin:12px 0;">
+      Let's get you set up in 60 seconds:
+    </p>
+    <ol style="color:#e0e0e0; text-align:left; max-width:400px; margin:0 auto; line-height:2;">
+      <li>Click the <strong>&#9881;&#65039; Settings</strong> tab above</li>
+      <li>Paste your <strong>Gemini API key</strong> (it's free!)</li>
+      <li>Click <strong>Save</strong> &mdash; you're ready to write!</li>
+    </ol>
+    <p style="margin-top:14px;">
+      <a href="https://ai.google.dev" target="_blank" style="color:#e67e22; font-weight:bold;">Get a free Gemini API key &rarr;</a>
+    </p>
+  </div>
+
   <!-- Morning Briefing -->
   <div class="card">
     <h3>&#9728;&#65039; Morning Briefing</h3>
@@ -900,10 +916,16 @@ function loadStatus() {
         pl.appendChild(div);
       });
       updateModelSelection(data.providers);
+      // Hide welcome banner once providers are active
+      var wb = document.getElementById('welcomeBanner');
+      if (wb) wb.style.display = 'none';
     } else {
       lastProviders = [];
       pl.innerHTML = '<span style="color:#e74c3c">No providers active. Add an API key above.</span>';
       document.getElementById('modelSelectionList').innerHTML = '<span style="color:#7f8c8d">No active providers.</span>';
+      // Show welcome banner for first-time users
+      var wb = document.getElementById('welcomeBanner');
+      if (wb) wb.style.display = '';
     }
 
     // Skills

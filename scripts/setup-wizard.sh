@@ -444,11 +444,16 @@ else
     exit 1
 fi
 
-# Store vault passphrase
+# Store vault passphrase — export for this session AND save to .env for persistence
 export AUTHORCLAW_VAULT_KEY="$VAULT_PASS"
 
+# Write to .env so dotenv auto-loads it on every future start
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+echo "AUTHORCLAW_VAULT_KEY=$VAULT_PASS" > "$PROJECT_DIR/.env"
+
 ok "Vault passphrase configured"
-info "API keys will be stored in the encrypted vault after AuthorClaw starts."
+info "Saved to .env — your API keys will persist across restarts."
 info "Use the dashboard Settings tab or the vault API to save keys."
 
 # Ensure workspace directories exist
