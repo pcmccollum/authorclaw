@@ -33,6 +33,8 @@ export class TelegramBridge {
   public pauseRequested = false;
   private knownChatIds: Set<number> = new Set(); // Track chat IDs for broadcasting
   private lastFileList: string[] = []; // For /read # file picker
+  private voiceMode: Map<number, string | boolean> = new Map(); // chatId → voice preset or false
+  private lastResponse: Map<number, string> = new Map(); // chatId → last AI response for "read that back"
 
   constructor(token: string, config: Partial<TelegramConfig>) {
     this.token = token;
@@ -131,6 +133,7 @@ export class TelegramBridge {
         `/read [# or name] — Read a file\n` +
         `/export [# or name] — Export to Word/HTML/TXT\n` +
         `/speak [text or #] — Send voice message\n` +
+        `/voice — Toggle voice chat responses\n` +
         `/clean — Workspace usage & cleanup\n\n` +
         `Or just chat with me naturally.`);
       return;
@@ -461,6 +464,31 @@ export class TelegramBridge {
       return;
     }
 
+    // ── /voice — Toggle voice responses for chat messages ──
+    if (text.startsWith('/voice')) {
+      const args = text.replace(/^\/voice\s*/, '').trim().toLowerCase();
+      const voicePresets = ['narrator_female', 'narrator_male', 'narrator_deep', 'narrator_warm', 'british_male', 'british_female', 'storyteller', 'dramatic'];
+
+      if (args === 'off' || args === 'stop' || args === 'disable') {
+        this.voiceMode.delete(chatId);
+        await this.sendMessage(chatId, `🔇 Voice mode off. I'll respond with text only.`);
+      } else if (args === '' || args === 'on' || args === 'enable') {
+        this.voiceMode.set(chatId, true); // default voice
+        await this.sendMessage(chatId, `🔊 Voice mode on! I'll send voice messages with my responses.\nUse /voice off to disable, or /voice narrator_deep to change voice.`);
+      } else if (voicePresets.includes(args)) {
+        this.voiceMode.set(chatId, args);
+        await this.sendMessage(chatId, `🔊 Voice mode on with *${args}* voice.\nUse /voice off to disable.`);
+      } else {
+        await this.sendMessage(chatId,
+          `🔊 *Voice Mode:* ${this.voiceMode.has(chatId) ? 'ON' : 'OFF'}\n\n` +
+          `/voice on — Enable voice responses\n` +
+          `/voice off — Disable voice responses\n` +
+          `/voice narrator_deep — Use a specific voice\n\n` +
+          `*Voices:* ${voicePresets.join(', ')}`);
+      }
+      return;
+    }
+
     // ── /speak — Generate voice message on demand ──
     if (text.startsWith('/speak')) {
       const args = text.replace(/^\/speak\s*/, '').trim();
@@ -577,6 +605,19 @@ export class TelegramBridge {
       return;
     }
 
+    // ── One-off voice request: "read that back", "say that", "repeat that aloud" ──
+    const oneOffVoice = /\b(read that back|say that|speak that|repeat that|read that aloud|say that aloud|read it back|read it to me|say it back)\b/i.test(text);
+    if (oneOffVoice) {
+      const lastResp = this.lastResponse.get(chatId);
+      if (lastResp) {
+        await this.sendMessage(chatId, `🎙️ Reading last response aloud...`);
+        await this.generateAndSendVoice(chatId, lastResp, this.voiceMode.get(chatId));
+      } else {
+        await this.sendMessage(chatId, `Nothing to read back yet — send me a message first!`);
+      }
+      return;
+    }
+
     // ── Regular message — conversational chat via AI ──
     if (this.messageHandler) {
       // Prepend brevity instruction so AI keeps it short for Telegram
@@ -587,6 +628,14 @@ export class TelegramBridge {
         async (response) => {
           // sendMessage auto-splits at 4096 chars (Telegram's real limit)
           await this.sendMessage(chatId, response);
+
+          // Store last response for "read that back" requests
+          this.lastResponse.set(chatId, response);
+
+          // Voice mode: also send as voice message
+          if (this.voiceMode.has(chatId)) {
+            await this.generateAndSendVoice(chatId, response, this.voiceMode.get(chatId));
+          }
         }
       );
     }
@@ -672,6 +721,37 @@ export class TelegramBridge {
     } catch (error) {
       console.error('sendVoice error:', error);
       return false;
+    }
+  }
+
+  /** Generate TTS audio and send as voice message (used by voice mode + one-off requests) */
+  private async generateAndSendVoice(chatId: number, text: string, voiceSetting: string | boolean | undefined): Promise<void> {
+    try {
+      // Strip markdown formatting for cleaner TTS output
+      const cleanText = text
+        .replace(/\*\*([^*]+)\*\*/g, '$1')  // bold
+        .replace(/\*([^*]+)\*/g, '$1')       // italic
+        .replace(/`([^`]+)`/g, '$1')         // code
+        .replace(/#{1,3}\s+/g, '')           // headers
+        .replace(/[•\-]\s+/g, '')            // bullets
+        .substring(0, 10000);                // TTS length limit
+
+      if (cleanText.trim().length < 5) return; // Skip tiny responses
+
+      const voice = typeof voiceSetting === 'string' ? voiceSetting : undefined;
+      const ttsRes = await fetch('http://localhost:3847/api/audio/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText, voice }),
+      });
+      const ttsData = await ttsRes.json() as any;
+
+      if (ttsData.success && ttsData.file) {
+        await this.sendVoice(chatId, ttsData.file);
+      }
+    } catch (e) {
+      // Voice generation failure is non-critical — don't spam the user
+      console.error('Voice mode TTS error:', e);
     }
   }
 

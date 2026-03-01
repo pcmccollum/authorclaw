@@ -1,0 +1,188 @@
+AuthorClaw Skills Reference
+===========================
+39 skills loaded. Just chat naturally — AuthorClaw picks the right skill
+based on keywords in your message. Examples below each skill.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CORE (7) — System learning and self-improvement
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After Action Review
+  Review what went well, what went wrong, and extract lessons
+  Try: "do an after action review" / "what went well" / "retrospective"
+
+Error Recovery
+  Diagnose and fix errors automatically
+  Try: "something broke" / "fix error" / "debug this" / "not working"
+
+Full Pipeline
+  Write a complete novel from premise to final manuscript
+  Try: "write a full book" / "complete novel" / "from start to finish"
+
+Preference Learner
+  Tracks your preferences and habits to personalize responses
+  Try: "I prefer X" / "remember that I" / "show preferences"
+
+Prompt Optimizer
+  Improves prompts based on output quality and A/B testing
+  Try: "optimize prompt" / "better prompt" / "prompt lab"
+
+Self-Improve
+  AuthorClaw learns from mistakes and feedback to get better
+  Try: "self improve" / "what did you learn" / "review performance"
+
+Skill Acquisition
+  Learns new skills on demand from user requests
+  Try: "learn how to X" / "add a skill for X" / "teach yourself X"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+AUTHOR (17) — Writing, editing, and manuscript management
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Beta Reader
+  Simulate beta reader feedback from different reader perspectives
+  Try: "beta read this" / "reader feedback" / "would readers like this"
+
+Book Bible
+  Maintain world consistency — characters, timeline, locations, rules
+  Try: "book bible" / "character sheet" / "world building" / "timeline"
+
+Dialogue
+  Craft authentic dialogue with distinct character voices
+  Try: "write dialogue" / "character voice" / "make them talk"
+
+Format
+  Export manuscripts to DOCX, EPUB, PDF, KDP-ready
+  Try: "format for kindle" / "export epub" / "manuscript format"
+
+Ingest Tool
+  Read source code and convert it into an AuthorClaw skill
+  Try: "ingest tool" / "create skill from this" / "import tool"
+
+Manuscript Hub
+  Track word count, chapters, progress, and writing streaks
+  Try: "word count" / "progress" / "how's my book" / "writing streak"
+
+Market Research
+  Analyze comp titles, genre trends, and pricing strategies
+  Try: "market research" / "comp titles" / "genre trends" / "pricing"
+
+Nonfiction Research
+  Source gathering, citations, fact-checking for nonfiction
+  Try: "citation" / "bibliography" / "fact check" / "academic source"
+
+Outline
+  Create structured outlines (Save the Cat, 3-Act, Hero's Journey)
+  Try: "outline" / "plot structure" / "save the cat" / "story beats"
+
+Premise
+  Develop compelling story premises with emotional hooks
+  Try: "premise" / "story idea" / "what if" / "elevator pitch"
+
+Promote
+  Write blurbs, taglines, social media posts, ad copy
+  Try: "promote" / "blurb" / "tagline" / "amazon description"
+
+Query Letter
+  Craft query letters and track agent submissions
+  Try: "query letter" / "agent submission" / "pitch my book"
+
+Research
+  Internet research with source tracking for writing projects
+  Try: "research X" / "look up" / "find out about" / "fact check"
+
+Revise
+  Multi-pass revision — developmental, line editing, copy editing
+  Try: "revise" / "edit" / "critique" / "developmental edit"
+
+Series Bible
+  Track multi-book continuity and series-level arcs
+  Try: "series bible" / "sequel" / "next book" / "multi-book"
+
+Style Clone
+  Analyze and match your unique writing voice
+  Try: "learn my style" / "match my voice" / "voice profile"
+
+Write
+  Draft scenes, chapters, and passages in your voice
+  Try: "write a scene" / "write chapter 3" / "continue writing"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MARKETING (4) — Book promotion and advertising
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ad Copy
+  Write ad copy for Amazon AMS, BookBub, Facebook ads
+  Try: "ad copy" / "amazon ad" / "bookbub ad" / "facebook ad"
+
+Blurb Writer
+  Write compelling book descriptions for Amazon/Goodreads
+  Try: "write a blurb" / "book description" / "back cover copy"
+
+Email List
+  Email sequences for reader magnets, launches, newsletters
+  Try: "email sequence" / "reader magnet" / "welcome sequence"
+
+Social Media
+  Create engaging social media content for book promotion
+  Try: "social media post" / "booktok" / "bookstagram" / "twitter"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PREMIUM (11) — Advanced tools (Writing Secrets skill packs)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Book Launch Machine
+  Complete launch automation — pre-launch to post-launch campaigns
+  Try: "launch plan" / "book launch" / "pre-launch" / "release day"
+
+Comp Title Finder
+  Find and analyze comparable titles for queries and positioning
+  Try: "comp titles" / "books like mine" / "similar books"
+
+Dictation Cleanup
+  Transform raw speech-to-text into polished prose
+  Try: "clean up dictation" / "fix dictation" / "transcription cleanup"
+
+First Chapter Hook
+  Analyze and rewrite first chapters for maximum reader retention
+  Try: "first chapter hook" / "opening hook" / "hook score"
+
+Ghostwriter Pro
+  Advanced co-writing with scene generation and tension mapping
+  Try: "ghostwriter" / "co-write" / "generate scene" / "deep write"
+
+Narrative Voice Coach
+  Deep coaching for developing a distinctive narrative voice
+  Try: "voice coach" / "narrative voice" / "find my voice"
+
+Read Aloud
+  Text-to-speech for manuscripts using neural voice engine
+  Try: "read aloud" / "read this" / "text to speech" / "listen"
+
+Sensitivity Reader
+  Review for representation, cultural accuracy, reader concerns
+  Try: "sensitivity read" / "representation check" / "bias check"
+
+Series Architect
+  Multi-book series planning with cross-book continuity engine
+  Try: "plan series" / "series architect" / "series outline"
+
+Deep Voice Analysis
+  Advanced 47-marker voice analysis to build your Voice Profile
+  Try: "deep voice analysis" / "writing dna" / "clone my style"
+
+Writing Secrets Bridges (2 integration skills):
+  WS Book Bible Bridge — Import Book Bible Engine JSON data
+    Try: "import book bible" / "sync book bible" / "load bible"
+  WS Workflow Engine Bridge — Import and run workflow sequences
+    Try: "import workflow" / "run workflow" / "execute sequence"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TIP: You can also chain skills in projects! Create a project like
+"Revision and Editing" and AuthorClaw runs multi-step workflows
+automatically. Upload your manuscript and let it work.
