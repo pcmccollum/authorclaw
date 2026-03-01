@@ -177,6 +177,39 @@ class AuthorClawGateway {
     const premiumLabel = premiumCount > 0 ? `, ${premiumCount} premium ★` : '';
     console.log(`  ✓ Skills: ${this.skills.getLoadedCount()} loaded (${this.skills.getAuthorSkillCount()} author-specific${premiumLabel})`);
 
+    // ── Phase 6a: Auto-generate SKILLS.txt reference file ──
+    try {
+      const skillsRefPath = join(ROOT_DIR, 'workspace', 'SKILLS.txt');
+      const catalog = this.skills.getSkillCatalog();
+      const byCategory = this.skills.getSkillsByCategory();
+      let refContent = 'AUTHORCLAW SKILLS REFERENCE\n';
+      refContent += `Auto-generated on startup — ${catalog.length} skills loaded\n`;
+      refContent += '═'.repeat(60) + '\n\n';
+
+      for (const category of ['core', 'author', 'marketing', 'premium']) {
+        const skills = byCategory[category];
+        if (!skills || skills.length === 0) continue;
+
+        const label = category.charAt(0).toUpperCase() + category.slice(1);
+        const extra = category === 'premium' ? ' ★' : '';
+        refContent += `── ${label} Skills (${skills.length})${extra} ──\n\n`;
+
+        for (const skill of skills) {
+          const catalogEntry = catalog.find(c => c.name === skill.name);
+          const triggers = catalogEntry?.triggers?.join(', ') || '';
+          refContent += `  ${skill.name}\n`;
+          refContent += `    ${skill.description}\n`;
+          if (triggers) refContent += `    Keywords: ${triggers}\n`;
+          refContent += '\n';
+        }
+      }
+
+      await fs.writeFile(skillsRefPath, refContent, 'utf-8');
+      console.log(`  ✓ SKILLS.txt auto-updated (${catalog.length} skills)`);
+    } catch (e) {
+      console.log(`  ⚠ Failed to update SKILLS.txt: ${e}`);
+    }
+
     // ── Phase 6b: Author OS Tools ──
     // Check multiple locations: Docker mount, env var, home dir, or relative to project
     const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
@@ -963,11 +996,36 @@ class AuthorClawGateway {
         }
 
         // Build user message with uploaded content injected directly
+        // For large documents (15K+ words): read from disk with smart truncation
         let stepUserMessage = activeStep!.prompt;
-        if (project.context?.uploadedContent) {
+        const uploads = project.context?.uploads || [];
+        const fileList = uploads.map((u: any) => `${u.filename} (${u.wordCount?.toLocaleString() || '?'} words)`).join(', ');
+
+        if (project.context?.documentLibraryFile) {
+          // Large document: read from disk with smart excerpt
+          let excerpt = '';
+          try {
+            if (existsSync(project.context.documentLibraryFile)) {
+              const fullText = await fs.readFile(project.context.documentLibraryFile, 'utf-8');
+              const MAX_CHARS = 25000;
+              if (fullText.length <= MAX_CHARS) {
+                excerpt = fullText;
+              } else {
+                const head = fullText.substring(0, 20000);
+                const tail = fullText.substring(fullText.length - 5000);
+                const omitted = Math.round((fullText.length - 25000) / 5);
+                excerpt = `${head}\n\n[... ⚠️ ~${omitted.toLocaleString()} words omitted. Full document in workspace/documents/. ...]\n\n${tail}`;
+              }
+            } else {
+              excerpt = '[Document file not found — it may have been moved or deleted]';
+            }
+          } catch (e) {
+            excerpt = '[Error reading document: ' + String(e) + ']';
+          }
+          stepUserMessage = `## Manuscript to Work With\n\nUploaded files: ${fileList}\n\n${excerpt}\n\n---\n\n## Your Task\n\n${stepUserMessage}`;
+        } else if (project.context?.uploadedContent) {
+          // Small document: use inline content
           const uploaded = String(project.context.uploadedContent).substring(0, 30000);
-          const uploads = project.context.uploads || [];
-          const fileList = uploads.map((u: any) => `${u.filename} (${u.wordCount} words)`).join(', ');
           stepUserMessage = `## Manuscript to Work With\n\nUploaded files: ${fileList}\n\n${uploaded}\n\n---\n\n## Your Task\n\n${stepUserMessage}`;
         }
 

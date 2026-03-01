@@ -541,18 +541,66 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
     res.json({ step, project: engine.getProject(req.params.id) });
   });
 
+  /**
+   * Smart excerpt builder for large manuscripts.
+   * Reads the full document from disk and extracts a relevant excerpt
+   * that fits within AI context limits while preserving the most useful content.
+   *
+   * Strategy: first 20K chars + last 5K chars (with truncation marker)
+   * This gives the AI the beginning (setup, style, voice) and ending (current state)
+   * which is ideal for revision, editing, and analysis tasks.
+   */
+  async function getSmartExcerpt(filePath: string, wordCount: number): Promise<string> {
+    const { readFile: rf } = await import('fs/promises');
+    const { existsSync: ex } = await import('fs');
+
+    if (!ex(filePath)) {
+      return `[Document not found at ${filePath} — it may have been moved or deleted]`;
+    }
+
+    const fullText = await rf(filePath, 'utf-8');
+    const MAX_CHARS = 25000; // ~6K words — fits comfortably in AI context
+
+    if (fullText.length <= MAX_CHARS) {
+      return fullText; // Small enough to include everything
+    }
+
+    // Smart split: first 20K + last 5K
+    const headSize = 20000;
+    const tailSize = 5000;
+    const head = fullText.substring(0, headSize);
+    const tail = fullText.substring(fullText.length - tailSize);
+
+    const omittedChars = fullText.length - headSize - tailSize;
+    const omittedWords = Math.round(omittedChars / 5); // rough estimate
+
+    return `${head}\n\n` +
+      `[... ⚠️ MIDDLE SECTION OMITTED: ~${omittedWords.toLocaleString()} words skipped to fit context. ` +
+      `Full document (${wordCount.toLocaleString()} words) is saved in workspace/documents/. ...]\n\n` +
+      `${tail}`;
+  }
+
   // Helper: build user message for project step execution
   // Injects uploaded manuscript DIRECTLY into the user message so the AI can't miss it
-  function buildStepUserMessage(project: any, step: any): string {
+  // For large documents (15K+ words): reads from disk and applies smart truncation
+  async function buildStepUserMessage(project: any, step: any): Promise<string> {
     let message = step.prompt;
+    const uploads = project.context?.uploads || [];
+    const fileList = uploads.map((u: any) => `${u.filename} (${u.wordCount?.toLocaleString() || '?'} words)`).join(', ');
 
-    // If the project has uploaded content, include it directly in the user message
-    // This is critical — system context can be huge (soul + skills + memories) and
-    // models may not see the uploaded text if it's buried in system context
+    // Large document path: read from disk with smart truncation
+    if (project.context?.documentLibraryFile) {
+      const excerpt = await getSmartExcerpt(
+        project.context.documentLibraryFile,
+        project.context.documentWordCount || 0
+      );
+      message = `## Manuscript to Work With\n\nUploaded files: ${fileList}\n\n${excerpt}\n\n---\n\n## Your Task\n\n${message}`;
+      return message;
+    }
+
+    // Small document path: use inline uploaded content (same as before)
     if (project.context?.uploadedContent) {
       const uploaded = String(project.context.uploadedContent).substring(0, 30000);
-      const uploads = project.context.uploads || [];
-      const fileList = uploads.map((u: any) => `${u.filename} (${u.wordCount} words)`).join(', ');
       message = `## Manuscript to Work With\n\nUploaded files: ${fileList}\n\n${uploaded}\n\n---\n\n## Your Task\n\n${message}`;
     }
 
@@ -576,7 +624,7 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
 
     try {
       const projectContext = engine.buildProjectContext(project, activeStep);
-      const userMessage = buildStepUserMessage(project, activeStep);
+      const userMessage = await buildStepUserMessage(project, activeStep);
       let response = '';
 
       await gateway.handleMessage(
@@ -650,7 +698,7 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
 
       try {
         const projectContext = engine.buildProjectContext(currentProject, activeStep);
-        const userMessage = buildStepUserMessage(currentProject, activeStep);
+        const userMessage = await buildStepUserMessage(currentProject, activeStep);
         let response = '';
 
         await gateway.handleMessage(
@@ -789,11 +837,197 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
   });
 
   // ═══════════════════════════════════════════════════════════
-  // Document Upload
+  // Document Library (centralized document storage for large manuscripts)
+  // ═══════════════════════════════════════════════════════════
+
+  // List all documents in the library
+  app.get('/api/documents', async (_req: Request, res: Response) => {
+    const { join: j } = await import('path');
+    const { readdir: rd, stat: st, readFile: rf } = await import('fs/promises');
+    const { existsSync: ex } = await import('fs');
+
+    const docsDir = j(baseDir, 'workspace', 'documents');
+    if (!ex(docsDir)) {
+      return res.json({ documents: [] });
+    }
+
+    try {
+      const entries = await rd(docsDir);
+      const docs: Array<{ filename: string; size: number; wordCount?: number; uploadedAt?: string }> = [];
+
+      for (const entry of entries) {
+        if (entry.startsWith('.') || entry === 'metadata.json') continue;
+        const fullPath = j(docsDir, entry);
+        const info = await st(fullPath);
+        if (!info.isFile()) continue;
+
+        let wordCount: number | undefined;
+        const ext = entry.split('.').pop()?.toLowerCase();
+        if (ext === 'txt' || ext === 'md') {
+          try {
+            const text = await rf(fullPath, 'utf-8');
+            wordCount = text.split(/\s+/).filter(Boolean).length;
+          } catch { /* skip */ }
+        }
+
+        docs.push({
+          filename: entry,
+          size: info.size,
+          wordCount,
+          uploadedAt: info.mtime.toISOString(),
+        });
+      }
+
+      // Load metadata for word counts of docx files
+      const metaPath = j(docsDir, 'metadata.json');
+      let metadata: Record<string, any> = {};
+      if (ex(metaPath)) {
+        try { metadata = JSON.parse(await rf(metaPath, 'utf-8')); } catch { /* ok */ }
+      }
+      for (const doc of docs) {
+        if (!doc.wordCount && metadata[doc.filename]?.wordCount) {
+          doc.wordCount = metadata[doc.filename].wordCount;
+        }
+      }
+
+      res.json({ documents: docs });
+    } catch {
+      res.json({ documents: [] });
+    }
+  });
+
+  // Upload a document directly to the library (not tied to a project)
+  app.post('/api/documents/upload', multer({
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max for library
+    fileFilter: (_req, file, cb) => {
+      const allowed = ['.txt', '.md', '.docx'];
+      const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+      if (allowed.includes(ext)) {
+        cb(null, true);
+      } else {
+        cb(new Error(`File type "${ext}" not supported. Use .txt, .md, or .docx`));
+      }
+    },
+    storage: multer.memoryStorage(),
+  }).single('file'), async (req: Request, res: Response) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { join: j } = await import('path');
+    const { mkdir: mkd, writeFile: wf, readFile: rf } = await import('fs/promises');
+    const { existsSync: ex } = await import('fs');
+
+    const docsDir = j(baseDir, 'workspace', 'documents');
+    await mkd(docsDir, { recursive: true });
+
+    const filename = req.file.originalname;
+    const ext = filename.split('.').pop()?.toLowerCase();
+
+    // Save the raw file
+    await wf(j(docsDir, filename), req.file.buffer);
+
+    // Extract text and word count
+    let textContent = '';
+    if (ext === 'txt' || ext === 'md') {
+      textContent = req.file.buffer.toString('utf-8');
+    } else if (ext === 'docx') {
+      try {
+        const AdmZip = (await import('adm-zip')).default;
+        const zip = new AdmZip(req.file.buffer);
+        const docEntry = zip.getEntry('word/document.xml');
+        if (docEntry) {
+          const xml = docEntry.getData().toString('utf-8');
+          const paragraphs: string[] = [];
+          const paraMatches = xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || [];
+          for (const para of paraMatches) {
+            const textParts = para.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+            if (textParts) {
+              const line = textParts.map(t => t.replace(/<[^>]+>/g, '')).join('');
+              if (line.trim()) paragraphs.push(line);
+            }
+          }
+          textContent = paragraphs.join('\n\n');
+        }
+      } catch { /* ok */ }
+
+      // Save extracted text alongside for fast access
+      if (textContent) {
+        const textFilename = filename.replace(/\.docx$/i, '.extracted.txt');
+        await wf(j(docsDir, textFilename), textContent);
+      }
+    }
+
+    const wordCount = textContent.split(/\s+/).filter(Boolean).length;
+
+    // Save metadata
+    const metaPath = j(docsDir, 'metadata.json');
+    let metadata: Record<string, any> = {};
+    if (ex(metaPath)) {
+      try { metadata = JSON.parse(await rf(metaPath, 'utf-8')); } catch { /* ok */ }
+    }
+    metadata[filename] = {
+      wordCount,
+      uploadedAt: new Date().toISOString(),
+      size: req.file.size,
+    };
+    await wf(metaPath, JSON.stringify(metadata, null, 2));
+
+    res.json({
+      success: true,
+      filename,
+      wordCount,
+      size: req.file.size,
+      library: true,
+      preview: textContent.substring(0, 200),
+    });
+  });
+
+  // Delete a document from the library
+  app.delete('/api/documents/:filename', async (req: Request, res: Response) => {
+    const { join: j } = await import('path');
+    const { unlink, readFile: rf, writeFile: wf } = await import('fs/promises');
+    const { existsSync: ex } = await import('fs');
+
+    const filename = String(req.params.filename);
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    const docsDir = j(baseDir, 'workspace', 'documents');
+    const filePath = j(docsDir, filename);
+
+    if (!ex(filePath)) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    await unlink(filePath);
+
+    // Also delete extracted text if it exists
+    const extractedPath = j(docsDir, filename.replace(/\.docx$/i, '.extracted.txt'));
+    if (ex(extractedPath) && extractedPath !== filePath) {
+      try { await unlink(extractedPath); } catch { /* ok */ }
+    }
+
+    // Update metadata
+    const metaPath = j(docsDir, 'metadata.json');
+    if (ex(metaPath)) {
+      try {
+        const metadata = JSON.parse(await rf(metaPath, 'utf-8'));
+        delete metadata[filename];
+        await wf(metaPath, JSON.stringify(metadata, null, 2));
+      } catch { /* ok */ }
+    }
+
+    res.json({ success: true });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Document Upload (project-level + auto-library for large files)
   // ═══════════════════════════════════════════════════════════
 
   const upload = multer({
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max (up from 10MB for novel uploads)
     fileFilter: (_req, file, cb) => {
       const allowed = ['.txt', '.md', '.docx'];
       const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
@@ -820,7 +1054,8 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
     }
 
     const { join: j } = await import('path');
-    const { mkdir: mkd, writeFile: wf } = await import('fs/promises');
+    const { mkdir: mkd, writeFile: wf, readFile: rf } = await import('fs/promises');
+    const { existsSync: ex } = await import('fs');
 
     let textContent = '';
     const filename = req.file.originalname;
@@ -864,25 +1099,77 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
     await mkd(uploadDir, { recursive: true });
     await wf(j(uploadDir, filename), req.file.buffer);
 
-    // Store text content in project context for use in AI steps
-    if (!project.context.uploads) project.context.uploads = [];
     const wordCount = textContent.split(/\s+/).filter(Boolean).length;
+    const LARGE_THRESHOLD = 15000; // 15K words = "large" manuscript
+    const isLarge = wordCount > LARGE_THRESHOLD;
+
+    // For large manuscripts (15K+ words): save to centralized document library
+    // The full text stays on disk — only smart excerpts go into AI context
+    if (isLarge) {
+      const docsDir = j(baseDir, 'workspace', 'documents');
+      await mkd(docsDir, { recursive: true });
+
+      // Save the extracted text to the library for fast access at execution time
+      const textFilename = filename.replace(/\.\w+$/, '.txt');
+      await wf(j(docsDir, textFilename), textContent);
+      // Save original file too
+      await wf(j(docsDir, filename), req.file.buffer);
+
+      // Save metadata
+      const metaPath = j(docsDir, 'metadata.json');
+      let metadata: Record<string, any> = {};
+      if (ex(metaPath)) {
+        try { metadata = JSON.parse(await rf(metaPath, 'utf-8')); } catch { /* ok */ }
+      }
+      metadata[textFilename] = {
+        wordCount,
+        uploadedAt: new Date().toISOString(),
+        size: textContent.length,
+        originalFilename: filename,
+        projectId: project.id,
+      };
+      await wf(metaPath, JSON.stringify(metadata, null, 2));
+
+      console.log(`  📚 Large manuscript saved to document library: ${textFilename} (${wordCount.toLocaleString()} words)`);
+    }
+
+    // Store upload info in project context
+    if (!project.context.uploads) project.context.uploads = [];
     project.context.uploads.push({
       filename,
       wordCount,
       preview: textContent.substring(0, 500),
       uploadedAt: new Date().toISOString(),
+      isLarge,
+      libraryFile: isLarge ? filename.replace(/\.\w+$/, '.txt') : undefined,
     });
 
-    // Also inject the uploaded content into the project context for future steps
-    if (!project.context.uploadedContent) project.context.uploadedContent = '';
-    project.context.uploadedContent += `\n\n--- Uploaded: ${filename} ---\n${textContent.substring(0, 30000)}`;
+    // Store document content for AI steps
+    // For large documents: store reference path (read from disk at execution time)
+    // For small documents: store inline (same as before)
+    if (isLarge) {
+      // Store the path for on-demand reading at execution time
+      const textFilename = filename.replace(/\.\w+$/, '.txt');
+      project.context.documentLibraryFile = j(baseDir, 'workspace', 'documents', textFilename);
+      project.context.documentWordCount = wordCount;
+      // Store a brief excerpt for the system context (so AI knows what it's working with)
+      if (!project.context.uploadedContent) project.context.uploadedContent = '';
+      project.context.uploadedContent += `\n\n--- Uploaded: ${filename} (${wordCount.toLocaleString()} words — full text loaded from document library) ---\n`;
+      project.context.uploadedContent += textContent.substring(0, 2000);
+      project.context.uploadedContent += `\n\n[...${wordCount.toLocaleString()} words total — smart excerpt will be injected at execution time...]\n`;
+    } else {
+      // Small file: store inline as before
+      if (!project.context.uploadedContent) project.context.uploadedContent = '';
+      project.context.uploadedContent += `\n\n--- Uploaded: ${filename} ---\n${textContent}`;
+    }
 
     res.json({
       success: true,
       filename,
       wordCount,
       preview: textContent.substring(0, 200),
+      isLarge,
+      savedToLibrary: isLarge,
     });
   });
 

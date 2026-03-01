@@ -13,6 +13,7 @@ workspace/.audit/
 workspace/.agent/
 workspace/.audio/
 workspace/audio/
+workspace/documents/
 workspace/memory/
 workspace/.config/
 workspace/.activity/

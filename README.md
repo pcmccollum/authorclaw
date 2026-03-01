@@ -222,7 +222,33 @@ AuthorClaw includes a built-in neural voice engine powered by Microsoft Edge TTS
 
 **API:** `POST /api/audio/generate` with `{ text, voice, rate, pitch, volume }`
 
-Audio files are auto-cleaned after 24 hours. Use `/clean audio` to clear them manually.
+> **⚠️ Audio files are automatically deleted after 24 hours.** If you generate a voice file you want to keep (e.g., a narration of your chapter), save or download it before the auto-cleanup runs. Use `/clean audio` to clear them manually, or find them in `workspace/audio/`.
+
+---
+
+## Document Library & Large Manuscript Support
+
+AuthorClaw supports uploading manuscripts of any size — from short stories to 100K+ word novels.
+
+**Two-tier upload system:**
+
+| Upload Type | Size | How It Works |
+|-------------|------|-------------|
+| **Small files** (< 15K words) | Short stories, chapters, articles | Stored inline in project context — full text sent to AI |
+| **Large files** (15K+ words) | Novels, full manuscripts | Auto-saved to `workspace/documents/` — smart excerpts sent to AI |
+
+**How smart excerpts work for large manuscripts:**
+- The first ~4,000 words (setup, voice, style) and last ~1,000 words (current state) are sent to the AI
+- A truncation marker tells the AI the full document is available on disk
+- This keeps AI context manageable while giving it enough to work with
+- The full manuscript is always saved in `workspace/documents/` for reference
+
+**Document Library API:**
+- `GET /api/documents` — List all documents in the library
+- `POST /api/documents/upload` — Upload directly to the library (up to 50MB)
+- `DELETE /api/documents/:filename` — Remove a document
+
+**Dashboard:** Upload files via the Projects tab (Upload button). Large files are automatically saved to both the project and the central library.
 
 ---
 
@@ -296,10 +322,11 @@ authorclaw/
 │   ├── soul/             # SOUL.md, STYLE-GUIDE.md, VOICE-PROFILE.md
 │   ├── memory/           # Conversations, book bible, summaries
 │   ├── projects/         # Project output files organized by project
+│   ├── documents/        # Document library (large manuscripts, novels)
 │   ├── research/         # Research output files
 │   ├── .agent/           # Agent journal, self-improve logs
 │   ├── audio/            # Generated TTS voice files (auto-cleaned after 24hr)
-│   ├── SKILLS.txt        # Full skill reference with trigger keywords
+│   ├── SKILLS.txt        # Full skill reference (auto-generated on startup)
 │   ├── .activity/        # Universal activity log (JSONL)
 │   └── .audit/           # Security audit log (JSONL)
 ├── config/               # Configuration files
