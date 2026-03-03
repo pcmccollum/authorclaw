@@ -69,8 +69,11 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
       return res.status(400).json({ error: 'Message too long (max 10,000 chars)' });
     }
 
-    // Slash commands: route to dedicated command handler instead of AI
-    if (message.startsWith('/')) {
+    // Slash commands + natural language commands: route to dedicated handler
+    const lower = message.toLowerCase().trim();
+    const isCommand = message.startsWith('/') ||
+      ['continue', 'next', 'go', 'resume'].includes(lower);
+    if (isCommand) {
       try {
         const result = await gateway.handleDashboardCommand(message);
         return res.json({ response: result });

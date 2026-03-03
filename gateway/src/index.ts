@@ -975,27 +975,64 @@ class AuthorClawGateway {
    * Handle slash commands from the dashboard chat.
    * Mirrors Telegram command logic but returns strings.
    */
+  // Dashboard file list cache for /read and /export number-picking
+  private dashboardLastFileList: string[] = [];
+
   async handleDashboardCommand(input: string): Promise<string> {
     const parts = input.split(/\s+/);
     const cmd = parts[0].toLowerCase();
     const args = input.substring(cmd.length).trim();
     const workspaceDir = join(ROOT_DIR, 'workspace');
+    const handlers = this.buildTelegramCommandHandlers();
+
+    // Natural language commands (no slash prefix)
+    const lower = input.toLowerCase().trim();
+    if (lower === 'continue' || lower === 'next' || lower === 'go' || lower === 'resume') {
+      const projects = this.projectEngine.listProjects();
+      const resumable = projects.find(p => p.status === 'active' || p.status === 'paused');
+      if (!resumable) return 'No projects to continue. Create one with `/project [task]`.';
+      if (resumable.status === 'paused') {
+        resumable.status = 'active';
+        const firstPending = resumable.steps.find((s: any) => s.status === 'pending');
+        if (firstPending) firstPending.status = 'active';
+      }
+      // Run one step and return the result
+      try {
+        const result = await handlers.startAndRunProject(resumable.id);
+        if ('error' in result) return `Error: ${result.error}`;
+        return `▶️ Resumed **"${resumable.title}"**\n\n**Completed:** ${result.completed}\n${result.response.substring(0, 500)}${result.response.length > 500 ? '...' : ''}\n\n${result.nextStep ? `**Next:** ${result.nextStep}` : '✅ Project complete!'}`;
+      } catch (err) {
+        return `Error resuming project: ${String(err)}`;
+      }
+    }
 
     switch (cmd) {
       case '/help':
         return [
           '**Available Commands:**',
+          '',
+          '📝 **Projects**',
           '`/novel [idea]` — Create a full novel pipeline (all 6 phases)',
           '`/project [task]` — Create any project (AI plans the steps)',
           '`/write [idea]` — Quick writing task',
           '`/projects` — List all projects with status',
           '`/status` — Check what\'s running',
           '`/stop` — Pause active project',
-          '`/files [folder]` — List project files',
+          '`continue` — Resume paused project',
+          '',
+          '📁 **Files & Export**',
+          '`/files [folder]` — List project files (numbered)',
           '`/read [# or name]` — Preview a file',
-          '`/export [# or name]` — Export to DOCX',
+          '`/export [# or name] [format]` — Export to DOCX/HTML/TXT',
+          '',
+          '🔍 **Research**',
+          '`/research [topic]` — Web research with AI synthesis',
+          '',
+          '🔊 **Voice**',
           '`/speak [text]` — Generate voice audio',
           '`/voice [preset]` — Set TTS voice preset',
+          '',
+          '🧹 **Workspace**',
           '`/clean` — View workspace usage',
         ].join('\n');
 
@@ -1014,7 +1051,6 @@ class AuthorClawGateway {
       case '/goal': {
         if (!args) return 'Usage: `/project [describe your task]`\nExample: `/project outline a thriller about a rogue AI`';
         try {
-          const handlers = this.buildTelegramCommandHandlers();
           const result = await handlers.createProject(args, args);
           return `Project created: **"${args}"** (${result.steps} steps)\n\nGo to **Projects** to start execution.`;
         } catch (err) {
@@ -1025,7 +1061,6 @@ class AuthorClawGateway {
       case '/write': {
         if (!args) return 'Usage: `/write [what to write]`\nExample: `/write a snarky YouTube intro for my channel`';
         try {
-          const handlers = this.buildTelegramCommandHandlers();
           const result = await handlers.createProject(args, args);
           return `Writing project created: **"${args}"** (${result.steps} steps)\n\nGo to **Projects** to start execution.`;
         } catch (err) {
@@ -1047,16 +1082,23 @@ class AuthorClawGateway {
       case '/status': {
         const projects = this.projectEngine.listProjects();
         const active = projects.filter(p => p.status === 'active');
+        const completed = projects.filter(p => p.status === 'completed');
+        const paused = projects.filter(p => p.status === 'paused');
         const autoStatus = this.heartbeat.getAutonomousStatus();
-        let status = `**AuthorClaw Status**\n`;
-        status += `Projects: ${projects.length} total, ${active.length} active\n`;
-        status += `Agent: ${autoStatus.enabled ? (autoStatus.running ? 'WORKING' : 'ON') : 'OFF'}\n`;
+        const stats = this.heartbeat.getStats();
+        let status = `**AuthorClaw Status**\n\n`;
+        status += `📊 Projects: ${active.length} active, ${paused.length} paused, ${completed.length} completed\n`;
+        status += `🤖 Agent: ${autoStatus.enabled ? (autoStatus.running ? '**WORKING**' : '**ON**') : 'OFF'}\n`;
+        status += `📝 Words today: ${stats.todayWords.toLocaleString()}/${stats.dailyWordGoal.toLocaleString()} (${stats.goalPercent}%)`;
+        if (stats.streak > 0) status += ` 🔥 ${stats.streak}-day streak`;
+        status += '\n';
         if (active.length > 0) {
           const current = active[0];
           const currentStep = current.steps.find((s: any) => s.status === 'active');
-          status += `\nActive: **${current.title}** (${current.progress}%)\n`;
-          if (currentStep) status += `Current step: ${currentStep.label}`;
+          status += `\n▶️ Active: **${current.title}** (${current.progress}%)\n`;
+          if (currentStep) status += `   Current step: ${currentStep.label}`;
         }
+        status += `\n\n🌐 Dashboard: http://localhost:3847`;
         return status;
       }
 
@@ -1066,7 +1108,7 @@ class AuthorClawGateway {
         const active = projects.find(p => p.status === 'active');
         if (!active) return 'No active project to pause.';
         this.projectEngine.pauseProject(active.id);
-        return `⏸️ Paused **"${active.title}"** at ${active.progress}%. Say \`continue\` to resume.`;
+        return `⏸️ Paused **"${active.title}"** at ${active.progress}%. Type \`continue\` to resume.`;
       }
 
       case '/files': {
@@ -1074,15 +1116,117 @@ class AuthorClawGateway {
         try {
           const { readdirSync, statSync } = await import('fs');
           if (!existsSync(projectsDir)) return 'No project files yet.';
+
+          // Build numbered file list (like Telegram)
+          this.dashboardLastFileList = [];
+          const lines: string[] = [];
           const dirs = readdirSync(projectsDir).filter(d => statSync(join(projectsDir, d)).isDirectory());
-          if (dirs.length === 0) return 'No project files yet.';
-          const lines = dirs.map((d, i) => {
-            const files = readdirSync(join(projectsDir, d));
-            return `${i + 1}. **${d}/** (${files.length} files)`;
+
+          if (args) {
+            // Show files in specific directory
+            const targetDir = join(projectsDir, args);
+            if (!existsSync(targetDir)) return `Folder "${args}" not found.`;
+            const files = readdirSync(targetDir).filter(f => !statSync(join(targetDir, f)).isDirectory());
+            files.forEach(f => {
+              this.dashboardLastFileList.push(join(args, f));
+              lines.push(`${this.dashboardLastFileList.length}. ${f}`);
+            });
+            return `**Files in ${args}/:** (${files.length})\n\n${lines.join('\n')}\n\nUse \`/read 1\` to preview or \`/export 1\` to export.`;
+          }
+
+          // Show all project directories with files
+          dirs.forEach(d => {
+            const files = readdirSync(join(projectsDir, d)).filter(f => !statSync(join(projectsDir, d, f)).isDirectory());
+            lines.push(`📁 **${d}/** (${files.length} files)`);
+            files.forEach(f => {
+              this.dashboardLastFileList.push(join(d, f));
+              lines.push(`  ${this.dashboardLastFileList.length}. ${f}`);
+            });
           });
-          return `**Project Files:**\n\n${lines.join('\n')}\n\nUse the **Library** panel to browse and download files.`;
+          return `**Project Files:**\n\n${lines.join('\n')}\n\nUse \`/read 1\` to preview or \`/export 1 docx\` to export.`;
         } catch {
           return 'Could not read project files.';
+        }
+      }
+
+      case '/read': {
+        if (!args) return '📖 Use `/files` first to see numbered list, then:\n`/read 1` — read file #1\n`/read 3` — read file #3\n\nOr use a path:\n`/read projects/my-book/premise.md`';
+        try {
+          let filename = args;
+          const num = parseInt(args, 10);
+          if (!isNaN(num) && this.dashboardLastFileList.length > 0 && num >= 1 && num <= this.dashboardLastFileList.length) {
+            filename = this.dashboardLastFileList[num - 1];
+          }
+          const result = await handlers.readFile(filename);
+          if (result.error) return `⚠️ ${result.error}\n\n💡 Use \`/files\` first, then \`/read 1\` to read by number.`;
+          const preview = result.content.length > 2000
+            ? result.content.substring(0, 2000) + `\n\n... (${result.content.length.toLocaleString()} chars total — view full in Library)`
+            : result.content;
+          return `📄 **${filename}:**\n\n${preview}`;
+        } catch (err) {
+          return `Error reading file: ${String(err)}`;
+        }
+      }
+
+      case '/export': {
+        if (!args) {
+          return [
+            '📦 **Export your manuscript:**',
+            '',
+            '`/export [file] ` — Export to Word (.docx)',
+            '`/export [file] html` — Export as HTML',
+            '`/export [file] txt` — Export as plain text',
+            '`/export [file] all` — All formats',
+            '',
+            'Use `/files` first, then:',
+            '`/export 1` — Export file #1 to Word',
+            '`/export 3 html` — Export file #3 as HTML',
+          ].join('\n');
+        }
+        try {
+          const exportParts = args.split(/\s+/);
+          let filename = exportParts[0];
+          const format = exportParts[1]?.toLowerCase() || 'docx';
+
+          const num = parseInt(filename, 10);
+          if (!isNaN(num) && this.dashboardLastFileList.length > 0 && num >= 1 && num <= this.dashboardLastFileList.length) {
+            filename = this.dashboardLastFileList[num - 1];
+          }
+
+          const title = filename.replace(/\.[^.]+$/, '')
+            .replace(/[-_]/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase());
+
+          const exportRes = await fetch('http://localhost:3847/api/author-os/format', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              inputFile: filename,
+              title,
+              formats: format === 'all' ? ['all'] : [format],
+            }),
+          });
+          const exportData = await exportRes.json() as any;
+
+          if (exportData.error) return `❌ ${exportData.error}`;
+          if (exportData.success) {
+            const fileList = (exportData.files || []).map((f: string) => `  📄 ${f.split('/').pop()}`).join('\n');
+            return `✅ Export complete!\n\n${fileList}\n\n📁 Saved to workspace/exports/\nUse \`/files exports\` to see them, or check the **Library** panel.`;
+          }
+          return `⚠️ Export failed: ${exportData.error || 'Unknown error'}`;
+        } catch (err) {
+          return `❌ Export error: ${String(err)}`;
+        }
+      }
+
+      case '/research': {
+        if (!args) return '🔍 What should I research?\n\nExamples:\n`/research medieval sword types`\n`/research self-publishing trends 2026`\n`/research romance tropes readers love`';
+        try {
+          const result = await handlers.research(args);
+          if (result.error) return `⚠️ ${result.error}`;
+          return result.results;
+        } catch (err) {
+          return `❌ Research failed: ${String(err)}`;
         }
       }
 
@@ -1091,7 +1235,7 @@ class AuthorClawGateway {
         if (!this.tts) return 'TTS service not available.';
         try {
           const result = await this.tts.generate(args, {});
-          return `Voice generated! Audio saved to: \`${result.file || 'workspace/audio/'}\`\n\nDownload from the **Library** panel.`;
+          return `🔊 Voice generated! Audio saved to: \`${result.file || 'workspace/audio/'}\`\n\nDownload from the **Library** panel.`;
         } catch (err) {
           return `Voice generation failed: ${String(err)}`;
         }
@@ -1101,12 +1245,13 @@ class AuthorClawGateway {
         if (!this.tts) return 'TTS service not available.';
         const presets = ['narrator_female', 'narrator_male', 'narrator_deep', 'narrator_warm', 'british_male', 'british_female', 'storyteller', 'dramatic'];
         if (!args) {
-          return `**Voice Presets:**\n\n${presets.map(p => `• \`${p}\``).join('\n')}\n\nUsage: \`/voice narrator_warm\` to set your default voice.`;
+          const active = this.tts.getActiveVoice();
+          return `**Voice Presets:**\n\n${presets.map(p => `• \`${p}\`${active?.includes(p) ? ' ✅ (active)' : ''}`).join('\n')}\n\nUsage: \`/voice narrator_warm\` to set your default voice.`;
         }
         if (presets.includes(args.toLowerCase())) {
           try {
             await this.tts.setVoice(args.toLowerCase());
-            return `Voice set to **${args}**.`;
+            return `🔊 Voice set to **${args}**.`;
           } catch {
             return `Could not set voice to "${args}".`;
           }
@@ -1119,17 +1264,28 @@ class AuthorClawGateway {
           const { readdirSync, statSync } = await import('fs');
           if (!existsSync(workspaceDir)) return 'Workspace is empty.';
           const subdirs = ['projects', 'exports', 'documents', 'audio', 'research'];
+          let totalFiles = 0;
           const lines = subdirs.map(d => {
             const dir = join(workspaceDir, d);
             if (!existsSync(dir)) return `📁 **${d}/**: empty`;
             try {
-              const files = readdirSync(dir, { recursive: true });
-              return `📁 **${d}/**: ${files.length} files`;
+              const files = readdirSync(dir, { recursive: true }) as string[];
+              const fileCount = files.filter(f => !statSync(join(dir, String(f))).isDirectory()).length;
+              totalFiles += fileCount;
+              // Calculate rough size
+              let sizeBytes = 0;
+              files.forEach(f => {
+                try { sizeBytes += statSync(join(dir, String(f))).size; } catch {}
+              });
+              const sizeStr = sizeBytes < 1024 ? `${sizeBytes} B`
+                : sizeBytes < 1048576 ? `${(sizeBytes / 1024).toFixed(1)} KB`
+                : `${(sizeBytes / 1048576).toFixed(1)} MB`;
+              return `📁 **${d}/**: ${fileCount} files (${sizeStr})`;
             } catch {
               return `📁 **${d}/**: ?`;
             }
           });
-          return `**Workspace Usage:**\n\n${lines.join('\n')}`;
+          return `**Workspace Usage:**\n\n${lines.join('\n')}\n\nTotal: ${totalFiles} files`;
         } catch {
           return 'Could not read workspace.';
         }
