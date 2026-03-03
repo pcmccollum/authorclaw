@@ -350,20 +350,29 @@ export class HeartbeatService {
       const percent = Math.round((this.todayWords / this.config.dailyWordGoal) * 100);
       const milestones = [25, 50, 75, 90, 100];
 
+      // Find the HIGHEST applicable milestone that hasn't been sent yet
+      let bestMilestone: number | null = null;
       for (const milestone of milestones) {
         if (percent >= milestone && !this.reminderMilestones.has(milestone)) {
-          this.reminderMilestones.add(milestone);
-          const messages: Record<number, string> = {
-            25: `🌱 25% of your daily goal — nice start! ${this.todayWords.toLocaleString()}/${this.config.dailyWordGoal.toLocaleString()} words`,
-            50: `🔥 Halfway there! ${this.todayWords.toLocaleString()}/${this.config.dailyWordGoal.toLocaleString()} words — keep pushing!`,
-            75: `💪 75% done! Only ${(this.config.dailyWordGoal - this.todayWords).toLocaleString()} words to go!`,
-            90: `🏁 Almost there! 90% of your daily goal — you've got this!`,
-            100: `🎉 Daily goal CRUSHED! ${this.todayWords.toLocaleString()} words today!` +
-              (this.streak > 0 ? ` 🔥 ${this.streak}-day streak!` : ''),
-          };
-          this.sendReminder(messages[milestone]);
-          return; // One reminder at a time
+          bestMilestone = milestone;
         }
+      }
+      if (bestMilestone !== null) {
+        // Mark ALL milestones up to and including the best one as sent
+        for (const m of milestones) {
+          if (m <= bestMilestone) this.reminderMilestones.add(m);
+        }
+        const remaining = Math.max(0, this.config.dailyWordGoal - this.todayWords);
+        const messages: Record<number, string> = {
+          25: `🌱 25% of your daily goal — nice start! ${this.todayWords.toLocaleString()}/${this.config.dailyWordGoal.toLocaleString()} words`,
+          50: `🔥 Halfway there! ${this.todayWords.toLocaleString()}/${this.config.dailyWordGoal.toLocaleString()} words — keep pushing!`,
+          75: `💪 75% done! Only ${remaining.toLocaleString()} words to go!`,
+          90: `🏁 Almost there! 90% of your daily goal — you've got this!`,
+          100: `🎉 Daily goal CRUSHED! ${this.todayWords.toLocaleString()} words today!` +
+            (this.streak > 0 ? ` 🔥 ${this.streak}-day streak!` : ''),
+        };
+        this.sendReminder(messages[bestMilestone]);
+        return;
       }
     }
 

@@ -1669,48 +1669,118 @@ export function createAPIRoutes(app: Application, gateway: any, rootDir?: string
     res.json({ success: true, status: services.heartbeat.getAutonomousStatus() });
   });
 
-  // ── Idle Task Results ──
+  // ── Idle Task Queue (CRUD) + History ──
+
+  // Get task queue (user-configurable) + completed task history
   app.get('/api/autonomous/idle-tasks', async (_req: Request, res: Response) => {
     try {
       const { join: j } = await import('path');
-      const { readdir, readFile, stat } = await import('fs/promises');
+      const { readdir, readFile, stat, writeFile, mkdir } = await import('fs/promises');
       const { existsSync } = await import('fs');
-      const agentDir = j(baseDir, 'workspace', '.agent');
-      if (!existsSync(agentDir)) return res.json({ tasks: [], queue: [] });
 
-      const files = await readdir(agentDir);
-      const idleFiles = files.filter(f => f.startsWith('idle-') && f.endsWith('.md')).sort().reverse();
-      const tasks: any[] = [];
-      for (const file of idleFiles.slice(0, 20)) {
-        const content = await readFile(j(agentDir, file), 'utf-8');
-        const fileStat = await stat(j(agentDir, file));
-        const titleMatch = content.match(/^# (.+)$/m);
-        tasks.push({
-          file,
-          title: titleMatch ? titleMatch[1] : file,
-          preview: content.substring(0, 300),
-          date: fileStat.mtime.toISOString(),
-          size: fileStat.size,
-        });
+      // Load task queue from config
+      const configPath = j(baseDir, 'workspace', '.config', 'idle-tasks.json');
+      let queue: any[] = [];
+      if (existsSync(configPath)) {
+        const raw = await readFile(configPath, 'utf-8');
+        queue = JSON.parse(raw).tasks || [];
+      } else {
+        // Initialize with defaults
+        const { DEFAULT_IDLE_TASKS } = await import('../services/idle-tasks-defaults.js');
+        queue = DEFAULT_IDLE_TASKS;
+        const configDir = j(baseDir, 'workspace', '.config');
+        await mkdir(configDir, { recursive: true });
+        await writeFile(configPath, JSON.stringify({ tasks: queue }, null, 2), 'utf-8');
       }
 
-      // Return the idle task queue (labels) so the dashboard can show what tasks are available
-      const queue = [
-        'Market trend analysis',
-        'Manuscript quality audit scorecard',
-        'Backlist optimization report',
-        'Series bible auto-update template',
-        'Reader response simulation',
-      ];
+      // Load completed task history from .agent directory
+      const agentDir = j(baseDir, 'workspace', '.agent');
+      const history: any[] = [];
+      if (existsSync(agentDir)) {
+        const files = await readdir(agentDir);
+        const idleFiles = files.filter(f => f.startsWith('idle-') && f.endsWith('.md')).sort().reverse();
+        for (const file of idleFiles.slice(0, 20)) {
+          const content = await readFile(j(agentDir, file), 'utf-8');
+          const fileStat = await stat(j(agentDir, file));
+          const titleMatch = content.match(/^# (.+)$/m);
+          history.push({
+            file,
+            title: titleMatch ? titleMatch[1] : file,
+            preview: content.substring(0, 300),
+            date: fileStat.mtime.toISOString(),
+            size: fileStat.size,
+          });
+        }
+      }
 
-      res.json({ tasks, queue });
+      res.json({ queue, history });
     } catch (err) {
       res.status(500).json({ error: 'Failed to load idle tasks: ' + String(err) });
     }
   });
 
-  // ── Download idle task file ──
-  app.get('/api/autonomous/idle-tasks/:filename', async (req: Request, res: Response) => {
+  // Save entire task queue (replace all)
+  app.put('/api/autonomous/idle-tasks', async (req: Request, res: Response) => {
+    try {
+      const { join: j } = await import('path');
+      const { writeFile, mkdir } = await import('fs/promises');
+      const { tasks } = req.body;
+      if (!Array.isArray(tasks)) return res.status(400).json({ error: 'tasks must be an array' });
+      const configDir = j(baseDir, 'workspace', '.config');
+      await mkdir(configDir, { recursive: true });
+      await writeFile(j(configDir, 'idle-tasks.json'), JSON.stringify({ tasks }, null, 2), 'utf-8');
+      res.json({ success: true, count: tasks.length });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to save idle tasks: ' + String(err) });
+    }
+  });
+
+  // Add a single task
+  app.post('/api/autonomous/idle-tasks', async (req: Request, res: Response) => {
+    try {
+      const { join: j } = await import('path');
+      const { readFile, writeFile, mkdir } = await import('fs/promises');
+      const { existsSync } = await import('fs');
+      const { label, prompt, enabled } = req.body;
+      if (!label || !prompt) return res.status(400).json({ error: 'label and prompt are required' });
+
+      const configPath = j(baseDir, 'workspace', '.config', 'idle-tasks.json');
+      let tasks: any[] = [];
+      if (existsSync(configPath)) {
+        tasks = JSON.parse(await readFile(configPath, 'utf-8')).tasks || [];
+      }
+      tasks.push({ label, prompt, enabled: enabled !== false });
+      const configDir = j(baseDir, 'workspace', '.config');
+      await mkdir(configDir, { recursive: true });
+      await writeFile(configPath, JSON.stringify({ tasks }, null, 2), 'utf-8');
+      res.status(201).json({ success: true, task: tasks[tasks.length - 1], index: tasks.length - 1 });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to add idle task: ' + String(err) });
+    }
+  });
+
+  // Delete a task by index
+  app.delete('/api/autonomous/idle-tasks/:index', async (req: Request, res: Response) => {
+    try {
+      const { join: j } = await import('path');
+      const { readFile, writeFile } = await import('fs/promises');
+      const { existsSync } = await import('fs');
+      const idx = parseInt(String(req.params.index));
+      const configPath = j(baseDir, 'workspace', '.config', 'idle-tasks.json');
+      if (!existsSync(configPath)) return res.status(404).json({ error: 'No idle tasks configured' });
+
+      const tasks: any[] = JSON.parse(await readFile(configPath, 'utf-8')).tasks || [];
+      if (idx < 0 || idx >= tasks.length) return res.status(404).json({ error: 'Task index out of range' });
+      const removed = tasks.splice(idx, 1);
+      await writeFile(configPath, JSON.stringify({ tasks }, null, 2), 'utf-8');
+      res.json({ success: true, removed: removed[0], remaining: tasks.length });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to delete idle task: ' + String(err) });
+    }
+  });
+
+  // Download completed idle task file
+  app.get('/api/autonomous/idle-tasks/history/:filename', async (req: Request, res: Response) => {
     try {
       const { join: j, resolve: r } = await import('path');
       const { readFile } = await import('fs/promises');

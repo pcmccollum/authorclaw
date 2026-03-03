@@ -411,99 +411,31 @@ class AuthorClawGateway {
 
         return project.id;
       },
-      // Idle task: run advanced author-focused tasks when no projects are active
-      // Runs max once per day, uses free-tier AI only, never destructive
+      // Idle task: run configurable author-focused tasks when no projects are active
+      // Loads tasks from workspace/.config/idle-tasks.json (user-editable via dashboard)
       async () => {
-        const idleTasks = [
-          {
-            label: 'Market trend analysis',
-            prompt: `You are a publishing market analyst with deep expertise in indie and traditional publishing. Perform a detailed market trend analysis:
+        // Load tasks from config file, falling back to defaults
+        const idleConfigPath = join(ROOT_DIR, 'workspace', '.config', 'idle-tasks.json');
+        let idleTasks: Array<{ label: string; prompt: string; enabled?: boolean }> = [];
+        try {
+          if ((await import('fs')).existsSync(idleConfigPath)) {
+            const raw = await fs.readFile(idleConfigPath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            idleTasks = (parsed.tasks || []).filter((t: any) => t.enabled !== false);
+          }
+        } catch { /* fall through to defaults */ }
 
-1. **Bestseller Trends**: Analyze what's working in the top 20 books across romance, thriller, fantasy, and mystery right now. What patterns do you see?
-2. **Emerging Tropes**: Identify 3-5 tropes or subgenres gaining traction (e.g., "cozy fantasy", "morally grey heroes", "romantasy"). Why are they resonating?
-3. **Reader Preferences**: What are readers asking for on BookTok, Goodreads, and reader forums? What gaps exist between what readers want and what's being published?
-4. **Comp Title Spotlight**: For each genre, identify 2-3 recent standout titles and analyze why they're succeeding (cover, hook, timing, positioning).
-5. **Actionable Recommendations**: Suggest 3 specific book concepts that could capitalize on current market gaps. Include logline, genre, target tropes, and why NOW is the right time.
+        if (idleTasks.length === 0) {
+          idleTasks = (await import('./services/idle-tasks-defaults.js')).DEFAULT_IDLE_TASKS;
+          // Save defaults on first run
+          try {
+            const configDir = join(ROOT_DIR, 'workspace', '.config');
+            await fs.mkdir(configDir, { recursive: true });
+            await fs.writeFile(idleConfigPath, JSON.stringify({ tasks: idleTasks }, null, 2), 'utf-8');
+          } catch { /* non-fatal */ }
+        }
 
-Be specific with titles, author names, and data. Write 600+ words.`,
-          },
-          {
-            label: 'Manuscript quality audit scorecard',
-            prompt: `You are a professional developmental editor who has edited 200+ published novels. Generate a comprehensive manuscript quality audit scorecard that an author can use to evaluate their completed manuscript:
-
-**Prose Quality** (1-10): Sentence variety, word choice, voice consistency, show vs tell ratio, purple prose detection, opening hook strength
-- 3 diagnostic questions the author should ask themselves
-
-**Pacing & Structure** (1-10): Scene length variation, tension arc per act, chapter hooks & cliffhangers, dead zone detection, info-dump density, scene-sequel rhythm
-- 3 diagnostic questions
-
-**Dialogue** (1-10): Subtext usage, character voice distinctiveness per speaker, dialogue tag variety, realistic speech patterns, exposition through dialogue
-- 3 diagnostic questions
-
-**Emotional Resonance** (1-10): Character vulnerability, stakes escalation, reader connection points, emotional beat frequency, catharsis delivery
-- 3 diagnostic questions
-
-**Commercial Viability** (1-10): Genre compliance, hook strength, concept clarity, target audience fit, comp title positioning, cover-worthy premise
-- 3 diagnostic questions
-
-Include a scoring interpretation guide: 40-50 = publish-ready, 30-39 = one more pass, 20-29 = needs significant revision, below 20 = developmental edit needed.
-
-Write 800+ words.`,
-          },
-          {
-            label: 'Backlist optimization report',
-            prompt: `You are a book marketing strategist specializing in indie author backlist optimization. Generate an actionable backlist optimization report:
-
-1. **Blurb Formulas**: Provide 3 proven blurb structures with examples for romance, thriller, and fantasy:
-   - The Hook-Stakes-Promise format
-   - The Question-Tension-Reveal format
-   - The Comparison-Premise-Promise format
-
-2. **Amazon A+ Content Strategy**: What modules convert best? What images work? How to structure comparison charts and from-the-author sections for maximum sales lift.
-
-3. **Keyword Research Method**: Step-by-step process for finding high-volume, low-competition keywords. Include the exact process: Amazon auto-suggest mining, category browsing, comp title keyword extraction.
-
-4. **Category Strategy**: How to select optimal BISAC categories and Amazon browse categories. Which categories have the best visibility-to-competition ratio by genre.
-
-5. **Cover Audit Checklist**: 8-point checklist for evaluating if a book cover meets current genre expectations. What's working NOW vs what worked 2 years ago.
-
-6. **Price Optimization**: When to use 99¢, $2.99, $4.99, $9.99. KU vs wide distribution tradeoffs.
-
-Be specific with actionable steps, not vague advice. Write 700+ words.`,
-          },
-          {
-            label: 'Series bible auto-update template',
-            prompt: `You are a continuity editor who has managed 50+ book series. Create a comprehensive, ready-to-use series bible template:
-
-1. **Character Database Template**: For each major character provide fields for: full name, aliases, physical description (height, build, eye color, distinguishing marks), personality traits (3 positive, 3 negative), backstory summary, relationships map, character arc across books, key scenes by book, known inconsistencies to watch.
-
-2. **World-Building Registry**: Locations with sensory descriptions, magic/tech systems with hard rules and costs, political structures, cultural norms, economic systems, timeline of world events, maps/geography notes.
-
-3. **Timeline Tracker**: How to track parallel timelines, time jumps, character ages at each book, seasonal references, date-specific events, pregnancy/growth timelines for children, travel times between locations.
-
-4. **Continuity Checklist**: The 20 most common continuity errors in series fiction: eye color changes, timeline contradictions, forgotten subplots, character name spelling variations, tech/magic system inconsistencies, relationship status confusion, age drift, seasonal impossibilities.
-
-5. **Cross-Reference System**: How to tag and link entries for instant lookup. Template for "every scene with Character X in Location Y" queries.
-
-Provide the actual template structure with 2-3 example entries per section. Write 800+ words.`,
-          },
-          {
-            label: 'Reader response simulation',
-            prompt: `You are a reader psychology expert who studies how different reader types respond to fiction. Generate detailed simulated reader reviews from 5 distinct reader archetypes for a hypothetical recently-published romance novel:
-
-1. **The Superfan** (5 stars, 150 words): Gushing, emotionally invested. Quotes favorite moments. Compares to beloved favorites ("If you loved [X], you'll DEVOUR this"). Begs for sequel. Uses all caps at least once. Mentions staying up too late reading.
-
-2. **The Casual Reader** (3-4 stars, 120 words): Enjoyed it but had minor complaints. Mentions pacing issues in the middle. Liked the characters but found the conflict predictable. Would "recommend with caveats." Finishes with "looking forward to more from this author."
-
-3. **The Harsh Critic** (2 stars, 130 words): Identifies genuine structural weaknesses with specific examples. Compares unfavorably to better books in the genre. Points out crutch words and repetitive descriptions. Acknowledges one thing that worked. Constructive but unsparing.
-
-4. **The Book Blogger** (4 stars, 140 words): Professional tone. Discusses themes, craft, and reader experience. Mentions specific scenes that stood out. Has a "who should read this" section. Rates on multiple axes (writing, characters, plot, steam level, originality).
-
-5. **The Genre Expert** (3-4 stars, 130 words): Evaluates against romance conventions. Discusses trope execution quality. Compares to 3 recent releases in the subgenre. Notes what was fresh vs formulaic. Addresses market positioning.
-
-**What These Reviews Tell You**: After the reviews, provide 5 actionable insights the author should extract from this feedback pattern — what's working, what needs attention, and what to prioritize in the next book. Write 900+ words total.`,
-          },
-        ];
+        if (idleTasks.length === 0) return null;
 
         // Pick a random task
         const task = idleTasks[Math.floor(Math.random() * idleTasks.length)];
