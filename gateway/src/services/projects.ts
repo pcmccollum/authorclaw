@@ -16,7 +16,7 @@
 import { AuthorOSService } from './author-os.js';
 import type { SkillCatalogEntry } from '../skills/loader.js';
 import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 // ═══════════════════════════════════════════════════════════
@@ -1013,7 +1013,6 @@ export class ProjectEngine {
   private loadState(): void {
     try {
       if (!existsSync(this.stateFilePath)) return;
-      const { readFileSync } = require('fs');
       const raw = readFileSync(this.stateFilePath, 'utf-8');
       const state = JSON.parse(raw);
       if (state.nextId) this.nextId = state.nextId;
