@@ -63,32 +63,6 @@ Write 800+ words.`,
 Be specific with actionable steps, not vague advice. Write 700+ words.`,
   },
   {
-    label: 'Series bible auto-update template',
-    enabled: true,
-    prompt: `You are a continuity editor who has managed 50+ book series. Create a comprehensive, ready-to-use series bible template:
-
-1. **Character Database Template**: Full name, aliases, physical description, personality traits, backstory, relationships map, arc across books, key scenes.
-2. **World-Building Registry**: Locations, magic/tech systems, political structures, cultural norms, economic systems, timeline of events.
-3. **Timeline Tracker**: Parallel timelines, time jumps, character ages per book, seasonal references, travel times.
-4. **Continuity Checklist**: 20 most common continuity errors in series fiction.
-5. **Cross-Reference System**: How to tag and link entries for instant lookup.
-
-Provide actual template structure with 2-3 example entries per section. Write 800+ words.`,
-  },
-  {
-    label: 'Reader response simulation',
-    enabled: true,
-    prompt: `You are a reader psychology expert. Generate detailed simulated reader reviews from 5 distinct archetypes for a hypothetical recently-published novel:
-
-1. **The Superfan** (5 stars, 150 words)
-2. **The Casual Reader** (3-4 stars, 120 words)
-3. **The Harsh Critic** (2 stars, 130 words)
-4. **The Book Blogger** (4 stars, 140 words)
-5. **The Genre Expert** (3-4 stars, 130 words)
-
-After the reviews, provide 5 actionable insights the author should extract from this feedback pattern. Write 900+ words total.`,
-  },
-  {
     label: 'Clean up project files',
     enabled: true,
     prompt: `You are a file organization specialist for author workspaces. Analyze the current workspace and generate a detailed cleanup report:
@@ -100,5 +74,37 @@ After the reviews, provide 5 actionable insights the author should extract from 
 5. **Recommendations**: Suggest specific cleanup actions — files to archive, rename, or delete. Prioritize by impact.
 
 Be specific with file paths and sizes. Format as an actionable checklist the author can review.`,
+  },
+  {
+    label: 'System health check',
+    enabled: true,
+    prompt: `You are a system diagnostics specialist for AuthorClaw, an AI-powered writing agent. Perform a comprehensive health check of the workspace and system configuration:
+
+1. **Project Integrity**: Check all active and completed projects. Are there any projects stuck in "active" with no progress? Any failed steps that need attention? Any projects with missing output files?
+2. **Configuration Audit**: Review the current system configuration. Are AI providers properly configured? Are there any missing or invalid settings? Is the word count goal reasonable?
+3. **Persona Health**: List all configured personas. Check for incomplete profiles (missing genre, voice description, or bio). Suggest improvements for any weak profiles.
+4. **Workspace Disk Usage**: Estimate total workspace size. Flag any unusually large files (>10MB). Check for duplicate content across project directories.
+5. **Performance Observations**: Based on recent activity, are there patterns suggesting issues? (e.g., many failed steps, short AI responses, provider errors)
+6. **Recommendations**: Provide 3-5 specific actions the author should take to improve their AuthorClaw setup.
+
+Be specific and actionable. Format as a diagnostic report with severity levels (INFO, WARN, ACTION NEEDED).`,
+  },
+  {
+    label: 'Book soundtrack and mood playlist',
+    enabled: true,
+    prompt: `You are a music curator who specializes in creating atmospheric soundtracks for novels and writing sessions. Generate a detailed soundtrack recommendation:
+
+1. **Writing Mood Playlist**: Suggest 10 instrumental tracks (with artist names) perfect for focused writing sessions. Organize by energy level: deep focus, moderate flow, high-intensity action scenes.
+2. **Genre-Specific Scores**: For each of these genres (romance, thriller, fantasy, sci-fi), recommend 5 film/game soundtracks that match the genre's emotional tone. Explain WHY each score works for that genre.
+3. **Scene Scoring Guide**: Create a quick-reference table matching common scene types to music moods:
+   - Love scene / confession → warm strings, piano
+   - Chase / fight → percussive, urgent
+   - Mystery / discovery → ethereal, sparse
+   - Loss / grief → minor key, solo instrument
+   - Victory / climax → full orchestra, major key
+4. **Ambient Sound Recommendations**: Suggest 5 ambient soundscapes (rain, coffee shop, forest, etc.) and when each works best during the writing process.
+5. **Spotify/YouTube Search Terms**: Provide exact search terms the author can use to find each type of playlist on streaming platforms.
+
+Be specific with artist names, album titles, and track names. Write 600+ words.`,
   },
 ];

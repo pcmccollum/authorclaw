@@ -1362,8 +1362,43 @@ function openCreateProjectModal(template, serverTemplate) {
 
     api('POST', endpoint, body).then(function(data) {
       overlay.remove();
-      showToast('Project created!', 'success');
-      loadProjects();
+
+      // Get the project ID from the response
+      var projectId = null;
+      if (data.project && data.project.id) {
+        projectId = data.project.id;
+      } else if (data.phases && data.phases.length > 0) {
+        projectId = data.phases[0].id;
+      }
+
+      if (projectId) {
+        showToast('Project created! Starting execution...', 'success');
+        loadProjects();
+        // Auto-execute: fire in background, open detail view, poll for progress
+        setTimeout(function() {
+          openProjectDetail(projectId);
+          // Fire auto-execute (this is a long-running request — we don't block on it)
+          api('POST', '/api/projects/' + projectId + '/auto-execute').then(function(result) {
+            var completed = (result.results || []).filter(function(r) { return r.success; }).length;
+            showToast('Project finished! ' + completed + ' steps completed.', 'success');
+            loadProjects();
+            if (currentDetailProject === projectId) openProjectDetail(projectId);
+          }).catch(function(err) {
+            showToast('Execution error: ' + err.message, 'error');
+            loadProjects();
+            if (currentDetailProject === projectId) openProjectDetail(projectId);
+          });
+          // Poll for step progress while running
+          var pollId = setInterval(function() {
+            loadProjects();
+            if (currentDetailProject === projectId) openProjectDetail(projectId);
+          }, 8000);
+          setTimeout(function() { clearInterval(pollId); }, 600000); // 10 min max poll
+        }, 500);
+      } else {
+        showToast('Project created!', 'success');
+        loadProjects();
+      }
     }).catch(function(e) {
       showToast('Failed: ' + e.message, 'error');
       document.getElementById('modalCreate').disabled = false;
@@ -1463,9 +1498,9 @@ function renderProjectList() {
     });
   });
 
-  // Wire action buttons
+  // Wire action buttons — Start triggers auto-execute (Start alone only marks step active, doesn't run AI)
   el.querySelectorAll('.btn-start').forEach(function(btn) {
-    btn.addEventListener('click', function() { projectAction('start', btn.getAttribute('data-id')); });
+    btn.addEventListener('click', function() { projectAction('auto-execute', btn.getAttribute('data-id')); });
   });
   el.querySelectorAll('.btn-auto').forEach(function(btn) {
     btn.addEventListener('click', function() { projectAction('auto-execute', btn.getAttribute('data-id')); });
@@ -1598,7 +1633,7 @@ function openProjectDetail(id) {
 
   // Wire action buttons
   var pdStart = detail.querySelector('#pdStart');
-  if (pdStart) pdStart.addEventListener('click', function() { projectAction('start', id); });
+  if (pdStart) pdStart.addEventListener('click', function() { projectAction('auto-execute', id); });
   var pdAuto = detail.querySelector('#pdAuto');
   if (pdAuto) pdAuto.addEventListener('click', function() { projectAction('auto-execute', id); });
   var pdPause = detail.querySelector('#pdPause');

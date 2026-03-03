@@ -38,8 +38,28 @@ export class PersonaService {
         for (const p of data.personas || []) {
           this.personas.set(p.id, p);
         }
+        // Auto-backup personas on startup (safety net for updates)
+        if (this.personas.size > 0) {
+          const backupPath = this.filePath.replace('.json', '.backup.json');
+          await writeFile(backupPath, raw, 'utf-8');
+        }
       } catch (error) {
         console.error('  ⚠ Failed to load personas:', error);
+        // Try to recover from backup
+        const backupPath = this.filePath.replace('.json', '.backup.json');
+        if (existsSync(backupPath)) {
+          try {
+            const backupRaw = await readFile(backupPath, 'utf-8');
+            const backupData = JSON.parse(backupRaw);
+            for (const p of backupData.personas || []) {
+              this.personas.set(p.id, p);
+            }
+            console.log('  ✓ Personas recovered from backup');
+            await this.persist(); // Re-save the recovered data
+          } catch {
+            console.error('  ⚠ Persona backup recovery also failed');
+          }
+        }
       }
     }
   }
