@@ -848,6 +848,8 @@ textarea { resize: vertical; min-height: 60px; }
             <label>Bot Token</label>
             <input type="password" id="telegramToken" placeholder="Paste your bot token...">
           </div>
+		<button id="saveTelegramTokenBtn" class="small secondary" style="margin-top:8px; padding:6px 12px;">Save Token Only</button>
+		<span id="telegramTokenStatus" style="font-size:12px; margin-left:10px;"></span>
           <div class="form-group">
             <label>User ID</label>
             <input type="text" id="telegramUserId" placeholder="Your Telegram user ID">
@@ -2668,6 +2670,64 @@ renderKeyProviders();
 startPolling();
 
 })();
+// ── Dedicated Telegram Token Save (fork addition) ──
+document.getElementById('saveTelegramTokenBtn')?.addEventListener('click', async function() {
+  const btn = this;
+  const input = document.getElementById('telegramToken');
+  const status = document.getElementById('telegramTokenStatus');
+  const token = input.value.trim();
+
+  if (!token) {
+    status.innerHTML = '<span style="color:var(--danger);">Enter token first</span>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  status.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/vault', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'telegram_bot_token', value: token })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Save failed');
+    }
+
+    status.innerHTML = '<span style="color:var(--success);">✅ Token saved in vault!</span>';
+    input.value = ''; // clear field after success
+
+    // Manual toast (no showToast dependency)
+    const toast = document.createElement('div');
+    toast.className = 'toast success';
+    toast.textContent = 'Token saved securely — now enter User ID and Connect';
+    document.body.appendChild(toast);
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4500);
+
+    // Manual status refresh (top message)
+    const topStatus = document.getElementById('telegramStatus');
+    if (topStatus) {
+      topStatus.innerHTML = '<span style="color:var(--success);font-weight:700;">Token stored — ready to connect</span>';
+    }
+
+  } catch (err) {
+    status.innerHTML = '<span style="color:var(--danger);">Error: ' + err.message + '</span>';
+
+    // Error toast
+    const toast = document.createElement('div');
+    toast.className = 'toast error';
+    toast.textContent = 'Failed to save token: ' + err.message;
+    document.body.appendChild(toast);
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4500);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Token Only';
+  }
+});
 </script>
 </body>
 </html>
