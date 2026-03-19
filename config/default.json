@@ -12,8 +12,8 @@
     "defaultTemperature": 0.7,
     "ollama": {
       "enabled": true,
-      "endpoint": "http://localhost:11434",
-      "model": "llama3.2"
+      "endpoint": "http://172.24.160.1:11434",
+      "model": "qwen3.5:cloud"
     },
     "gemini": {
       "model": "gemini-2.5-flash"
